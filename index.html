@@ -87,11 +87,45 @@
         const controlsContainer = document.getElementById('controls-container');
         const showAllBtn = document.getElementById('show-all');
         let isFirstLoad = true;
+        
+        // --- CORREÇÃO INICIA AQUI ---
+        let apiToken = null; // Variável para armazenar o token
 
-        function getUserIdFromUrl() {
+        /**
+         * Obtém um parâmetro da URL.
+         * @param {string} name - O nome do parâmetro.
+         * @returns {string|null} O valor do parâmetro.
+         */
+        function getQueryParam(name) {
             const params = new URLSearchParams(window.location.search);
-            return params.get('user_id'); 
+            return params.get(name);
         }
+
+        /**
+         * Realiza uma requisição fetch autenticada, adicionando o token de autorização.
+         * @param {string} url - O endpoint da API.
+         * @param {object} options - Opções para a requisição fetch.
+         * @returns {Promise<Response>} A promessa da requisição fetch.
+         */
+        async function fetchWithAuth(url, options = {}) {
+            if (!apiToken) {
+                console.error('Erro fatal: API Token não encontrado na URL.');
+                // Exibe uma mensagem de erro clara para o usuário
+                messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token da API não fornecido na URL.</p>`;
+                document.getElementById('map').classList.add('hidden');
+                return Promise.reject(new Error('API Token não fornecido.'));
+            }
+
+            // Adiciona o cabeçalho de autorização
+            const headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${apiToken}`
+            };
+            
+            const fullUrl = `${API_BASE_URL}${url}`;
+            return fetch(fullUrl, { ...options, headers });
+        }
+        // --- FIM DA CORREÇÃO ---
 
         function initializeMap() {
             map = L.map('map').setView([-14.235, -51.925], 4);
@@ -104,7 +138,6 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
-        // --- Ícone SVG realista de celular ---
         const cellphoneIcon = L.divIcon({
             className: '',
             html: `
@@ -129,7 +162,8 @@
         async function fetchDeviceLocations(userId) {
             if (!userId) return;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/locations/my_devices/${userId}`);
+                // Usa a nova função fetchWithAuth que inclui o token no cabeçalho
+                const response = await fetchWithAuth(`/api/locations/my_devices/${userId}`);
                 if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
                 const locations = await response.json();
                 
@@ -141,6 +175,7 @@
                 }
                 updateMapMarkers(locations);
             } catch (error) {
+                // O erro 401 será capturado aqui
                 messageOverlay.innerHTML = `<h1>Erro</h1><p>${error.message}</p>`;
                 document.getElementById('map').classList.add('hidden');
                 controlsContainer.classList.add('hidden');
@@ -167,7 +202,6 @@
 
                 const latLng = [latitude, longitude];
 
-                // --- CONTEÚDO DO POPUP ATUALIZADO ---
                 const popupContent = `<b>Dispositivo:</b> ${displayName}<br>
                                       <b>Última atualização:</b> ${localTimestamp}<br>
                                       <a href="https://maps.google.com/maps?q=${latitude},${longitude}" target="_blank" style="text-decoration: none; color: #3498db;">Ver no Google Maps</a>`;
@@ -201,9 +235,11 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const userId = getUserIdFromUrl();
-            if (!userId) {
-                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1>`;
+            const userId = getQueryParam('user_id');
+            apiToken = getQueryParam('api_token'); // Pega o token da URL e armazena na variável global
+
+            if (!userId || !apiToken) { // Verifica ambos
+                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>ID de usuário ou token de API ausente na URL.</p>`;
                 document.getElementById('map').classList.add('hidden');
                 return;
             }
