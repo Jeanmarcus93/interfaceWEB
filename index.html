@@ -70,6 +70,7 @@
             border-radius: 5px;
             border: 1px solid #ddd;
             font-family: 'Courier New', Courier, monospace;
+            white-space: pre; /* Evita quebra de linha */
         }
         @media (max-width: 600px) {
             #controls-container {
@@ -155,25 +156,14 @@
         let isFirstLoad = true;
 
         // --- FUNÇÕES ---
-        
-        // 1. ATUALIZAR DATA E HORA
-        function updateDateTime() {
-            const now = new Date();
-            const options = {
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-                hour12: false
-            };
-            datetimeDisplay.textContent = new Intl.DateTimeFormat('pt-BR', options).format(now);
-        }
 
-        // 2. OBTER O ID DO USUÁRIO DA URL
+        // 1. OBTER O ID DO USUÁRIO DA URL
         function getUserIdFromUrl() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('user_id'); // Alterado de 'token' para 'user_id'
+            return params.get('user_id'); 
         }
 
-        // 3. INICIALIZAÇÃO DO MAPA
+        // 2. INICIALIZAÇÃO DO MAPA
         function initializeMap() {
             map = L.map('map').setView([-14.235, -51.925], 4);
             const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
@@ -187,7 +177,7 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
-        // 4. ÍCONE PERSONALIZADO
+        // 3. ÍCONE PERSONALIZADO
         const cellphoneIcon = L.divIcon({
             className: 'cellphone-marker-icon',
             html: `<div class="phone-body"><div class="phone-screen"></div><div class="phone-button"></div></div>`,
@@ -196,14 +186,13 @@
             popupAnchor: [0, -40]
         });
 
-        // 5. BUSCAR E ATUALIZAR DADOS
+        // 4. BUSCAR E ATUALIZAR DADOS
         async function fetchDeviceLocations(userId) {
             if (!userId) {
                 console.error('ID do usuário não fornecido.');
                 return;
             }
             try {
-                // Constrói a nova URL da API com o ID do usuário
                 const response = await fetch(`${API_BASE_URL}/api/locations/my_devices/${userId}`);
 
                 if (!response.ok) {
@@ -230,8 +219,23 @@
             }
         }
         
-        // 6. ATUALIZAR MARCADORES NO MAPA
+        // 5. ATUALIZAR MARCADORES NO MAPA
         function updateMapMarkers(locations) {
+            // Exibe a data/hora da última atualização de qualquer dispositivo
+            if (locations && locations.length > 0) {
+                const latestTimestamp = Math.max(...locations.map(device => new Date(device.timestamp).getTime()));
+                
+                if (latestTimestamp) {
+                    const lastUpdateDate = new Date(latestTimestamp);
+                    const options = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+                    datetimeDisplay.textContent = `Última Posição: ${new Intl.DateTimeFormat('pt-BR', options).format(lastUpdateDate)}`;
+                } else {
+                    datetimeDisplay.textContent = 'Última Posição: N/D';
+                }
+            } else {
+                datetimeDisplay.textContent = 'Última Posição: N/D';
+            }
+
             const activeDevices = new Set();
             const markerBounds = [];
             const selectedDeviceBeforeUpdate = deviceSelector.value;
@@ -277,12 +281,11 @@
                 controlsContainer.classList.remove('hidden');
                 isFirstLoad = false;
             } else if (!isFirstLoad && markerBounds.length > 0) {
-                // Garante que os controlos fiquem visíveis após a primeira carga, caso apareçam depois
                 controlsContainer.classList.remove('hidden');
             }
         }
 
-        // 7. INICIALIZAÇÃO E EVENTOS
+        // 6. INICIALIZAÇÃO E EVENTOS
         document.addEventListener('DOMContentLoaded', () => {
             const userId = getUserIdFromUrl();
 
@@ -305,9 +308,6 @@
                     map.fitBounds(allBounds, { padding: [50, 50] });
                 }
             });
-
-            updateDateTime();
-            setInterval(updateDateTime, 1000); // Atualiza o relógio a cada segundo
 
             fetchDeviceLocations(userId);
             setInterval(() => fetchDeviceLocations(userId), 30000); // Atualiza a localização dos dispositivos
