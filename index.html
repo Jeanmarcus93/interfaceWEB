@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mapa de Dispositivos em Tempo Real</title>
-    <!-- Importação da biblioteca de mapas Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <style>
         /* --- ESTILOS GERAIS --- */
@@ -42,22 +41,43 @@
             max-width: 90%;
         }
 
-        /* --- ESTILOS PARA O SELETOR DE DISPOSITIVOS --- */
-        #device-selector {
+        /* --- ESTILOS PARA OS CONTROLOS NO CANTO INFERIOR ESQUERDO --- */
+        #controls-container {
             position: fixed;
-            top: 10px;
-            left: 50px;
+            bottom: 20px;
+            left: 10px;
             z-index: 1000;
-            padding: 8px;
-            background-color: white;
+            display: flex;
+            align-items: center;
+            gap: 15px; /* Espaço entre o seletor e a data/hora */
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
             border: 1px solid #ccc;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        #device-selector {
             font-size: 14px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            padding: 5px;
+        }
+        #datetime-display {
+            font-size: 14px;
+            color: #333;
+            background-color: #f0f0f0;
+            padding: 6px 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-family: 'Courier New', Courier, monospace;
         }
         @media (max-width: 600px) {
-            #device-selector {
+            #controls-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
                 left: 10px;
+                bottom: 10px;
             }
         }
 
@@ -111,12 +131,13 @@
     </style>
 </head>
 <body>
-    <!-- Elementos HTML para o mapa e controlos -->
     <div id="map"></div>
-    <select id="device-selector" class="hidden"></select>
+    <div id="controls-container" class="hidden">
+        <select id="device-selector"></select>
+        <span id="datetime-display"></span>
+    </div>
     <div id="message-overlay">A carregar dispositivos...</div>
 
-    <!-- Importação do JavaScript do Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
@@ -129,31 +150,44 @@
         const deviceMarkers = {};
         const messageOverlay = document.getElementById('message-overlay');
         const deviceSelector = document.getElementById('device-selector');
+        const controlsContainer = document.getElementById('controls-container');
+        const datetimeDisplay = document.getElementById('datetime-display');
         let isFirstLoad = true;
 
         // --- FUNÇÕES ---
+        
+        // 1. ATUALIZAR DATA E HORA
+        function updateDateTime() {
+            const now = new Date();
+            const options = {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            };
+            datetimeDisplay.textContent = new Intl.DateTimeFormat('pt-BR', options).format(now);
+        }
 
-        // 1. OBTER O ID DO USUÁRIO DA URL
+        // 2. OBTER O ID DO USUÁRIO DA URL
         function getUserIdFromUrl() {
             const params = new URLSearchParams(window.location.search);
             return params.get('user_id'); // Alterado de 'token' para 'user_id'
         }
 
-        // 2. INICIALIZAÇÃO DO MAPA
+        // 3. INICIALIZAÇÃO DO MAPA
         function initializeMap() {
             map = L.map('map').setView([-14.235, -51.925], 4);
             const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-                attribution: 'Map data &copy; Google'
+                attribution: 'Map data © Google'
             }).addTo(map);
             const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
+                attribution: '© OpenStreetMap contributors'
             });
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
-        // 3. ÍCONE PERSONALIZADO
+        // 4. ÍCONE PERSONALIZADO
         const cellphoneIcon = L.divIcon({
             className: 'cellphone-marker-icon',
             html: `<div class="phone-body"><div class="phone-screen"></div><div class="phone-button"></div></div>`,
@@ -162,7 +196,7 @@
             popupAnchor: [0, -40]
         });
 
-        // 4. BUSCAR E ATUALIZAR DADOS
+        // 5. BUSCAR E ATUALIZAR DADOS
         async function fetchDeviceLocations(userId) {
             if (!userId) {
                 console.error('ID do usuário não fornecido.');
@@ -192,11 +226,11 @@
                 messageOverlay.innerHTML = `<h1>Erro ao Carregar</h1><p>${error.message}<br>Por favor, solicite um novo link ao bot do Telegram.</p>`;
                 messageOverlay.classList.remove('hidden');
                 document.getElementById('map').classList.add('hidden');
-                deviceSelector.classList.add('hidden');
+                controlsContainer.classList.add('hidden');
             }
         }
         
-        // 5. ATUALIZAR MARCADORES NO MAPA
+        // 6. ATUALIZAR MARCADORES NO MAPA
         function updateMapMarkers(locations) {
             const activeDevices = new Set();
             const markerBounds = [];
@@ -240,12 +274,15 @@
                 } else {
                     map.fitBounds(markerBounds, { padding: [50, 50] });
                 }
-                deviceSelector.classList.remove('hidden');
+                controlsContainer.classList.remove('hidden');
                 isFirstLoad = false;
+            } else if (!isFirstLoad && markerBounds.length > 0) {
+                // Garante que os controlos fiquem visíveis após a primeira carga, caso apareçam depois
+                controlsContainer.classList.remove('hidden');
             }
         }
 
-        // 6. INICIALIZAÇÃO E EVENTOS
+        // 7. INICIALIZAÇÃO E EVENTOS
         document.addEventListener('DOMContentLoaded', () => {
             const userId = getUserIdFromUrl();
 
@@ -269,8 +306,11 @@
                 }
             });
 
+            updateDateTime();
+            setInterval(updateDateTime, 1000); // Atualiza o relógio a cada segundo
+
             fetchDeviceLocations(userId);
-            setInterval(() => fetchDeviceLocations(userId), 30000);
+            setInterval(() => fetchDeviceLocations(userId), 30000); // Atualiza a localização dos dispositivos
         });
     </script>
 </body>
