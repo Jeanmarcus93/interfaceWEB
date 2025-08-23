@@ -15,7 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- VARIÁVEIS DE ESTADO ---
     let currentDevice = null;
-    let apiToken = null; // O token será lido da URL.
+    let jwtToken = null; // O token JWT será lido da URL.
+    let currentUserId = null; // O user_id será obtido após a validação do token
 
     // --- FUNÇÕES AUXILIARES ---
 
@@ -36,15 +37,15 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {Promise<Response>} A promessa da requisição fetch.
      */
     async function fetchWithAuth(url, options = {}) {
-        if (!apiToken) {
-            console.error('Erro fatal: API Token não encontrado na URL.');
-            alert('Erro de autenticação: Token da API não fornecido.');
-            return Promise.reject(new Error('API Token não fornecido.'));
+        if (!jwtToken) {
+            console.error('Erro fatal: JWT Token não encontrado.');
+            alert('Erro de autenticação: Token de acesso não fornecido.');
+            return Promise.reject(new Error('Token de acesso não fornecido.'));
         }
 
         const headers = {
             ...options.headers,
-            'Authorization': `Bearer ${apiToken}`
+            'Authorization': `Bearer ${jwtToken}`
         };
         
         const fullUrl = `${API_BASE_URL}${url}`;
@@ -82,14 +83,14 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     async function loadDevices() {
         try {
-            const response = await fetchWithAuth('/api/devices');
+            const response = await fetchWithAuth('/api/locations/my_devices'); // Endpoint ajustado
             if (!response.ok) {
                 console.error('Falha ao buscar dispositivos:', response.status, response.statusText);
                 return;
             }
             const devices = await response.json();
             deviceSelector.innerHTML = '<option value="">-- Selecione --</option>';
-            // Assumindo que a API retorna uma lista de objetos { displayName, deviceName }
+            // A API agora retorna uma lista de objetos { deviceName, displayName, ... }
             devices.forEach(device => {
                 const option = document.createElement('option');
                 option.value = device.deviceName;
@@ -240,62 +241,86 @@ document.addEventListener('DOMContentLoaded', () => {
                 highlight: true
             },
             events: {
-                input: {
-                    selection: (event) => {
-                        const selection = event.detail.selection.value;
-                        document.getElementById(selectorId).value = selection.toUpperCase();
+                    input: {
+                        selection: (event) => {
+                            const selection = event.detail.selection.value;
+                            document.getElementById(selectorId).value = selection.toUpperCase();
+                        }
                     }
                 }
-            }
-        });
-    }
+            });
+        }
 
     // --- LÓGICA DE INICIALIZAÇÃO DA PÁGINA ---
     
     const deviceNameFromUrl = getQueryParam('device_name');
-    apiToken = getQueryParam('api_token');
+    jwtToken = getQueryParam('token'); // Pega o token JWT da URL
 
-    if (!apiToken) {
-        document.body.innerHTML = '<h1>Erro: Acesso não autorizado. O token da API é necessário.</h1>';
-        console.error("Token da API não encontrado na URL. A página não pode ser carregada.");
+    if (!jwtToken) {
+        document.body.innerHTML = '<h1>Erro: Acesso não autorizado. O token de acesso é necessário.</h1>';
+        console.error("Token de acesso não encontrado na URL. A página não pode ser carregada.");
         return;
     }
 
-    if (deviceNameFromUrl) {
-        currentDevice = deviceNameFromUrl;
-        loadRules(currentDevice);
-        fetchDeviceDetailsAndUpdateTitle(currentDevice); // Chama a nova função
-        deviceSelectionArea.style.display = 'none';
-    } else {
-        deviceSelectionArea.style.display = 'block';
-        loadDevices();
-        deviceSelector.addEventListener('change', () => {
-             loadRules(deviceSelector.value);
-             // Atualiza o título também quando um novo dispositivo é selecionado
-             fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
-        });
+    // Valida o token JWT com o backend para obter o user_id
+    async function validateAndInitialize() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: jwtToken })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.message || 'Token de acesso inválido ou expirado.');
+            }
+            
+            currentUserId = data.user_id; // Armazena o user_id validado
+
+            if (deviceNameFromUrl) {
+                currentDevice = deviceNameFromUrl;
+                loadRules(currentDevice);
+                fetchDeviceDetailsAndUpdateTitle(currentDevice);
+                deviceSelectionArea.style.display = 'none';
+            } else {
+                deviceSelectionArea.style.display = 'block';
+                loadDevices();
+                deviceSelector.addEventListener('change', () => {
+                    loadRules(deviceSelector.value);
+                    fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
+                });
+            }
+
+            // --- EVENT LISTENERS PARA OS FORMULÁRIOS ---
+            permitidoForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const input = permitidoForm.querySelector('input');
+                if (input.value) {
+                    addRule(input.value.toUpperCase(), 'permitido');
+                    input.value = '';
+                }
+            });
+
+            proibidoForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const input = proibidoForm.querySelector('input');
+                if (input.value) {
+                    addRule(input.value.toUpperCase(), 'proibido');
+                    input.value = '';
+                }
+            });
+
+            // Inicializa o autocompletar para ambos os campos de input.
+            inicializarAutocomplete('permitido-input');
+            inicializarAutocomplete('proibido-input');
+
+        } catch (error) {
+            document.body.innerHTML = `<h1>Erro de Autenticação</h1><p>${error.message}</p>`;
+            console.error('Erro na validação do token:', error);
+        }
     }
 
-    // --- EVENT LISTENERS PARA OS FORMULÁRIOS ---
-    permitidoForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const input = permitidoForm.querySelector('input');
-        if (input.value) {
-            addRule(input.value.toUpperCase(), 'permitido');
-            input.value = '';
-        }
-    });
-
-    proibidoForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const input = proibidoForm.querySelector('input');
-        if (input.value) {
-            addRule(input.value.toUpperCase(), 'proibido');
-            input.value = '';
-        }
-    });
-
-    // Inicializa o autocompletar para ambos os campos de input.
-    inicializarAutocomplete('permitido-input');
-    inicializarAutocomplete('proibido-input');
+    validateAndInitialize();
 });

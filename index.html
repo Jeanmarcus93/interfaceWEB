@@ -88,8 +88,8 @@
         const showAllBtn = document.getElementById('show-all');
         let isFirstLoad = true;
         
-        // --- CORREÇÃO INICIA AQUI ---
-        let apiToken = null; // Variável para armazenar o token
+        let jwtToken = null; // Variável para armazenar o token JWT
+        let currentUserId = null; // Variável para armazenar o user_id após validação do token
 
         /**
          * Obtém um parâmetro da URL.
@@ -102,30 +102,28 @@
         }
 
         /**
-         * Realiza uma requisição fetch autenticada, adicionando o token de autorização.
+         * Realiza uma requisição fetch autenticada, adicionando o token JWT no cabeçalho.
          * @param {string} url - O endpoint da API.
          * @param {object} options - Opções para a requisição fetch.
          * @returns {Promise<Response>} A promessa da requisição fetch.
          */
         async function fetchWithAuth(url, options = {}) {
-            if (!apiToken) {
-                console.error('Erro fatal: API Token não encontrado na URL.');
-                // Exibe uma mensagem de erro clara para o usuário
-                messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token da API não fornecido na URL.</p>`;
+            if (!jwtToken) {
+                console.error('Erro fatal: JWT Token não encontrado.');
+                messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token de acesso ausente.</p>`;
                 document.getElementById('map').classList.add('hidden');
-                return Promise.reject(new Error('API Token não fornecido.'));
+                controlsContainer.classList.add('hidden');
+                return Promise.reject(new Error('Token de acesso não fornecido.'));
             }
 
-            // Adiciona o cabeçalho de autorização
             const headers = {
                 ...options.headers,
-                'Authorization': `Bearer ${apiToken}`
+                'Authorization': `Bearer ${jwtToken}`
             };
             
             const fullUrl = `${API_BASE_URL}${url}`;
             return fetch(fullUrl, { ...options, headers });
         }
-        // --- FIM DA CORREÇÃO ---
 
         function initializeMap() {
             map = L.map('map').setView([-14.235, -51.925], 4);
@@ -159,12 +157,18 @@
             popupAnchor: [0, -40]      
         });
 
-        async function fetchDeviceLocations(userId) {
-            if (!userId) return;
+        async function fetchDeviceLocations() { // Não precisa mais do userId como parâmetro
+            if (!currentUserId) {
+                console.warn('currentUserId não definido. Pulando fetchDeviceLocations.');
+                return;
+            }
             try {
                 // Usa a nova função fetchWithAuth que inclui o token no cabeçalho
-                const response = await fetchWithAuth(`/api/locations/my_devices/${userId}`);
-                if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+                const response = await fetchWithAuth(`/api/locations/my_devices`); // Endpoint não precisa do userId
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Erro HTTP: ${response.status} - ${errorData.message || response.statusText}`);
+                }
                 const locations = await response.json();
                 
                 if (isFirstLoad && (!locations || locations.length === 0)) {
@@ -175,7 +179,6 @@
                 }
                 updateMapMarkers(locations);
             } catch (error) {
-                // O erro 401 será capturado aqui
                 messageOverlay.innerHTML = `<h1>Erro</h1><p>${error.message}</p>`;
                 document.getElementById('map').classList.add('hidden');
                 controlsContainer.classList.add('hidden');
@@ -234,38 +237,64 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const userId = getQueryParam('user_id');
-            apiToken = getQueryParam('api_token'); // Pega o token da URL e armazena na variável global
+        // --- Lógica de inicialização ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            jwtToken = getQueryParam('token'); // Obtém o token JWT da URL
 
-            if (!userId || !apiToken) { // Verifica ambos
-                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>ID de usuário ou token de API ausente na URL.</p>`;
+            if (!jwtToken) {
+                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>Token de acesso ausente na URL.</p>`;
                 document.getElementById('map').classList.add('hidden');
+                controlsContainer.classList.add('hidden');
                 return;
             }
-            initializeMap();
 
-            deviceSelector.addEventListener('change', function() {
-                const selectedDevice = this.value;
-                if (selectedDevice && deviceMarkers[selectedDevice]) {
-                    const marker = deviceMarkers[selectedDevice];
-                    map.setView(marker.getLatLng(), 16);
-                    marker.openPopup();
-                } else if (!selectedDevice && Object.keys(deviceMarkers).length > 1) {
-                    const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
-                    map.fitBounds(allBounds, { padding: [50, 50] });
+            try {
+                // Valida o token JWT com o backend para obter o user_id
+                const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: jwtToken })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Token de acesso inválido ou expirado.');
                 }
-            });
+                
+                currentUserId = data.user_id; // Armazena o user_id validado
+                initializeMap();
+                controlsContainer.classList.remove('hidden'); // Mostra os controles após autenticação
 
-            showAllBtn.addEventListener('click', () => {
-                if (Object.keys(deviceMarkers).length > 0) {
-                    const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
-                    map.fitBounds(allBounds, { padding: [50, 50] });
-                }
-            });
+                deviceSelector.addEventListener('change', function() {
+                    const selectedDevice = this.value;
+                    if (selectedDevice && deviceMarkers[selectedDevice]) {
+                        const marker = deviceMarkers[selectedDevice];
+                        map.setView(marker.getLatLng(), 16);
+                        marker.openPopup();
+                    } else if (!selectedDevice && Object.keys(deviceMarkers).length > 1) {
+                        const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                        map.fitBounds(allBounds, { padding: [50, 50] });
+                    }
+                });
 
-            fetchDeviceLocations(userId);
-            setInterval(() => fetchDeviceLocations(userId), 30000);
+                showAllBtn.addEventListener('click', () => {
+                    if (Object.keys(deviceMarkers).length > 0) {
+                        const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                        map.fitBounds(allBounds, { padding: [50, 50] });
+                    }
+                });
+
+                // Chama fetchDeviceLocations sem passar userId, pois ele já está em currentUserId
+                fetchDeviceLocations();
+                setInterval(fetchDeviceLocations, 30000); // Chama a cada 30 segundos
+                
+            } catch (error) {
+                messageOverlay.innerHTML = `<h1>Acesso Negado</h1><p>${error.message}</p>`;
+                document.getElementById('map').classList.add('hidden');
+                controlsContainer.classList.add('hidden');
+                console.error('Erro na validação do token:', error);
+            }
         });
     </script>
 </body>
