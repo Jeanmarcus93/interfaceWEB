@@ -15,21 +15,27 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center; /* Centraliza verticalmente o conteúdo */
+            padding: 1rem; /* Adiciona padding para evitar que o conteúdo encoste nas bordas */
         }
         .container {
             width: 90vw;
             max-width: 90vw;
-            margin-top: 2rem;
+            /* margin-top: 2rem; <-- Removido para ocupar a tela verticalmente */
             padding: 1.5rem;
             background-color: #ffffff;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            flex-grow: 1; /* Permite que o container ocupe o espaço restante */
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* Centraliza o conteúdo dentro do container */
         }
         @media (min-width: 768px) {
             .container {
                 max-width: 320px; /* Largura ajustada para melhor visualização */
                 width: 100%;
-                margin-top: 10vh;
+                /* margin-top: 10vh; <-- Removido para ocupar a tela verticalmente */
             }
         }
         .page-header {
@@ -128,7 +134,7 @@
 <body>
     <div class="container">
         <div class="page-header">
-            <h1 id="page-title">Gerar Mapa de Histórico</h1>
+            <h1 id="page-title">Histórico GPS - Gerar Mapa de Histórico</h1>
         </div>
 
         <p class="instruction-text">
@@ -209,22 +215,23 @@
              * @param {string} deviceName - O nome do dispositivo a ser buscado.
              */
             async function fetchDeviceDetailsAndUpdateTitle(deviceName) {
+                let titlePrefix = 'Histórico GPS - '; // Prefix to always be displayed
                 if (!deviceName) {
-                    pageTitle.textContent = 'Gerar Mapa de Histórico';
+                    pageTitle.textContent = titlePrefix + 'Gerar Mapa de Histórico';
                     return;
                 }
                 try {
                     const response = await fetchWithAuth(`/api/device/${deviceName}`);
                     if (response.ok) {
                         const details = await response.json();
-                        pageTitle.textContent = `Histórico - ${details.displayName}`;
+                        pageTitle.textContent = titlePrefix + details.displayName;
                     } else {
                         console.warn(`Não foi possível buscar o nome do dispositivo. Usando fallback: ${deviceName}`);
-                        pageTitle.textContent = `Histórico - ${deviceName}`;
+                        pageTitle.textContent = titlePrefix + deviceName;
                     }
                 } catch (error) {
                     console.error('Erro ao buscar detalhes do dispositivo:', error);
-                    pageTitle.textContent = `Histórico - ${deviceName}`;
+                    pageTitle.textContent = titlePrefix + deviceName;
                 }
             }
 
@@ -270,6 +277,8 @@
                 // Modo de seleção de dispositivo: carrega todos os dispositivos
                 deviceSelectionArea.style.display = 'block';
                 loadDevices();
+                // Set initial title even when no device is selected yet
+                pageTitle.textContent = 'Histórico GPS - Gerar Mapa de Histórico';
                 deviceSelector.addEventListener('change', () => {
                     fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
                 });
@@ -378,8 +387,14 @@
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.message || 'Erro desconhecido ao gerar mapa.');
 
-                    alert('O pedido para gerar o mapa foi enviado com sucesso! Irá recebê-lo no Telegram.');
-                    window.close();
+                    // Substituí o alert() por uma div de mensagem para melhor UX
+                    formAlert.textContent = 'O pedido para gerar o mapa foi enviado com sucesso! Irá recebê-lo no Telegram.';
+                    formAlert.style.display = 'block';
+                    formAlert.style.backgroundColor = '#d1fae5'; // Verde claro para sucesso
+                    formAlert.style.color = '#065f46'; // Verde escuro
+
+                    // Considere não fechar a janela automaticamente, ou dar um tempo para o usuário ler a mensagem
+                    // setTimeout(() => { window.close(); }, 3000); 
                     
                 } catch (error) {
                     formAlert.textContent = `Erro: ${error.message}`;
