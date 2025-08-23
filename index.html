@@ -48,13 +48,6 @@
             border: 1px solid #ccc; padding: 5px;
             min-width: 220px;
         }
-        #datetime-display {
-            font-size: 12px; color: #444;
-            background-color: #f9f9f9;
-            padding: 4px 8px; border-radius: 5px;
-            border: 1px solid #ddd;
-            font-family: 'Courier New', monospace;
-        }
         .map-button {
             background: #3498db; color: white; border: none;
             padding: 6px 10px; border-radius: 5px;
@@ -90,7 +83,6 @@
     <div id="map"></div>
     <div id="controls-container" class="hidden">
         <select id="device-selector"></select>
-        <span id="datetime-display"></span>
         <button id="show-all" class="map-button">🌍 Todos</button>
         <button id="show-selected" class="map-button">🔙 Selecionado</button>
     </div>
@@ -107,7 +99,6 @@
         const messageOverlay = document.getElementById('message-overlay');
         const deviceSelector = document.getElementById('device-selector');
         const controlsContainer = document.getElementById('controls-container');
-        const datetimeDisplay = document.getElementById('datetime-display');
         const showAllBtn = document.getElementById('show-all');
         const showSelectedBtn = document.getElementById('show-selected');
         let isFirstLoad = true;
@@ -156,15 +147,6 @@
         }
 
         function updateMapMarkers(locations) {
-            if (locations && locations.length > 0) {
-                const latestTimestamp = Math.max(...locations.map(d => new Date(d.timestamp).getTime()));
-                if (latestTimestamp) {
-                    const lastUpdateDate = new Date(latestTimestamp);
-                    const options = { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false };
-                    datetimeDisplay.textContent = `Última atualização: ${new Intl.DateTimeFormat('pt-BR', options).format(lastUpdateDate)}`;
-                }
-            }
-
             const activeDevices = new Set();
             const markerBounds = [];
             const selectedBefore = deviceSelector.value;
