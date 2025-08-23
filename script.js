@@ -1,7 +1,7 @@
 //
 // ---> EDITAR AQUI <---
 // Cole a URL do seu backend que já está no Render.
-const API_URL = 'https://seu-backend.onrender.com/api/locations/all';
+const API_URL = 'https://servidor-bot-60dr.onrender.com/api/locations/all';
 
 // Seu token já está configurado abaixo.
 const API_TOKEN = 'um_token_unico_e_diferente_do_bot'; 
