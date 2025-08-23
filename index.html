@@ -37,8 +37,12 @@
         /* --- Controles Inferiores --- */
         #controls-container {
             position: fixed; bottom: 20px; left: 10px;
-            z-index: 1000; display: flex; align-items: center;
-            gap: 15px; padding: 10px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column; /* Agora em coluna */
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px;
             background-color: rgba(255,255,255,0.9);
             border: 1px solid #ccc; border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
@@ -52,39 +56,21 @@
             background: #3498db; color: white; border: none;
             padding: 6px 10px; border-radius: 5px;
             cursor: pointer; font-size: 14px;
+            width: 100%;
         }
         .map-button:hover { background: #2980b9; }
 
         @media (max-width: 600px) {
-            #controls-container { flex-direction: column; gap: 8px; left: 10px; bottom: 10px; }
-        }
-
-        /* --- Ícone de celular --- */
-        .cellphone-marker-icon { background: transparent; border: none; }
-        .cellphone-marker-icon .phone-body {
-            position: relative; width: 18px; height: 32px;
-            background-color: #3498db; border: 1.5px solid #2980b9;
-            border-radius: 3px; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-            box-sizing: border-box;
-        }
-        .cellphone-marker-icon .phone-screen {
-            position: absolute; top: 3px; left: 2px; right: 2px; bottom: 7px;
-            background-color: #a9d6e5; border-radius: 1px;
-        }
-        .cellphone-marker-icon .phone-button {
-            position: absolute; bottom: 1px; left: 50%;
-            transform: translateX(-50%);
-            width: 4px; height: 4px; background-color: #f1f1f1;
-            border-radius: 50%; border: 1px solid #ccc;
+            #controls-container { width: 85%; }
+            #device-selector, .map-button { width: 100%; }
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="controls-container" class="hidden">
-        <select id="device-selector"></select>
         <button id="show-all" class="map-button">🌍 Todos</button>
-        <button id="show-selected" class="map-button">🔙 Selecionado</button>
+        <select id="device-selector"></select>
     </div>
     <div id="message-overlay">
         <div class="spinner"></div>
@@ -100,7 +86,6 @@
         const deviceSelector = document.getElementById('device-selector');
         const controlsContainer = document.getElementById('controls-container');
         const showAllBtn = document.getElementById('show-all');
-        const showSelectedBtn = document.getElementById('show-selected');
         let isFirstLoad = true;
 
         function getUserIdFromUrl() {
@@ -119,10 +104,19 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
+        // --- Ícone SVG realista de celular ---
         const cellphoneIcon = L.divIcon({
-            className: 'cellphone-marker-icon',
-            html: `<div class="phone-body"><div class="phone-screen"></div><div class="phone-button"></div></div>`,
-            iconSize: [18, 32], iconAnchor: [9, 38], popupAnchor: [0, -40]
+            className: '',
+            html: `
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="50" viewBox="0 0 24 24" fill="#3498db" stroke="#2980b9" stroke-width="1.2">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" fill="#3498db"/>
+                <rect x="7" y="4" width="10" height="14" rx="1" ry="1" fill="#a9d6e5"/>
+                <circle cx="12" cy="19" r="1.5" fill="#fff"/>
+              </svg>
+            `,
+            iconSize: [28, 50],
+            iconAnchor: [14, 50],
+            popupAnchor: [0, -50]
         });
 
         async function fetchDeviceLocations(userId) {
@@ -171,7 +165,12 @@
                 if (deviceMarkers[deviceName]) {
                     deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
                 } else {
-                    deviceMarkers[deviceName] = L.marker(latLng, { icon: cellphoneIcon }).addTo(map).bindPopup(popupContent);
+                    deviceMarkers[deviceName] = L.marker(latLng, { icon: cellphoneIcon })
+                        .addTo(map)
+                        .bindPopup(popupContent)
+                        .on("click", () => { 
+                            deviceSelector.value = deviceName; 
+                        });
                 }
             });
 
@@ -216,15 +215,6 @@
                 if (Object.keys(deviceMarkers).length > 0) {
                     const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
                     map.fitBounds(allBounds, { padding: [50, 50] });
-                }
-            });
-
-            showSelectedBtn.addEventListener('click', () => {
-                const selected = deviceSelector.value;
-                if (selected && deviceMarkers[selected]) {
-                    const marker = deviceMarkers[selected];
-                    map.setView(marker.getLatLng(), 16);
-                    marker.openPopup();
                 }
             });
 
