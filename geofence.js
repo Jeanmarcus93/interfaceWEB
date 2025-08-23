@@ -6,12 +6,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- SELETORES DE ELEMENTOS DOM ---
     const deviceSelector = document.getElementById('device-selector');
     const deviceSelectionArea = document.getElementById('device-selection-area');
-    const deviceDisplayName = document.getElementById('device-display-name');
     const rulesContainer = document.getElementById('rules-container');
     const permitidoList = document.getElementById('permitido-list');
     const proibidoList = document.getElementById('proibido-list');
     const permitidoForm = document.getElementById('permitido-form');
     const proibidoForm = document.getElementById('proibido-form');
+    const pageTitleElement = document.getElementById('page-title'); // Novo seletor para o título
 
     // --- VARIÁVEIS DE ESTADO ---
     let currentDevice = null;
@@ -30,8 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Realiza uma requisição fetch autenticada, adicionando o token de autorização
-     * e a URL base da API.
+     * Realiza uma requisição fetch autenticada.
      * @param {string} url - O endpoint da API (ex: '/api/devices').
      * @param {object} options - Opções para a requisição fetch.
      * @returns {Promise<Response>} A promessa da requisição fetch.
@@ -56,6 +55,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- FUNÇÕES PRINCIPAIS ---
 
     /**
+     * Busca os detalhes de um dispositivo e atualiza o título da página.
+     * @param {string} deviceName - O nome do dispositivo a ser buscado.
+     */
+    async function fetchDeviceDetailsAndUpdateTitle(deviceName) {
+        try {
+            const response = await fetchWithAuth(`/api/device/${deviceName}`);
+            if (response.ok) {
+                const details = await response.json();
+                // Usa o 'displayName', que é o nome customizado ou o original.
+                pageTitleElement.textContent = `Cerca Virtual - ${details.displayName}`;
+            } else {
+                // Se falhar, usa o nome original da URL como fallback.
+                console.warn(`Não foi possível buscar o nome do dispositivo. Usando fallback: ${deviceName}`);
+                pageTitleElement.textContent = `Cerca Virtual - ${deviceName}`;
+            }
+        } catch (error) {
+            console.error('Erro ao buscar detalhes do dispositivo:', error);
+            // Em caso de erro de rede, também usa o fallback.
+            pageTitleElement.textContent = `Cerca Virtual - ${deviceName}`;
+        }
+    }
+
+    /**
      * Carrega a lista de dispositivos da API e preenche o seletor.
      */
     async function loadDevices() {
@@ -67,10 +89,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const devices = await response.json();
             deviceSelector.innerHTML = '<option value="">-- Selecione --</option>';
+            // Assumindo que a API retorna uma lista de objetos { displayName, deviceName }
             devices.forEach(device => {
                 const option = document.createElement('option');
-                option.value = device;
-                option.textContent = device;
+                option.value = device.deviceName;
+                option.textContent = device.displayName; // Mostra o nome de exibição
                 deviceSelector.appendChild(option);
             });
         } catch (error) {
@@ -229,34 +252,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LÓGICA DE INICIALIZAÇÃO DA PÁGINA ---
     
-    // Lê os parâmetros da URL. O token é essencial.
     const deviceNameFromUrl = getQueryParam('device_name');
-    apiToken = getQueryParam('api_token'); // Define a variável global do script.
+    apiToken = getQueryParam('api_token');
 
     if (!apiToken) {
         document.body.innerHTML = '<h1>Erro: Acesso não autorizado. O token da API é necessário.</h1>';
         console.error("Token da API não encontrado na URL. A página não pode ser carregada.");
-        return; // Interrompe a execução se não houver token.
+        return;
     }
 
-    // Se um device_name for passado na URL, entra no modo "standalone".
     if (deviceNameFromUrl) {
         currentDevice = deviceNameFromUrl;
         loadRules(currentDevice);
-
-        // Esconde a área de seleção de dispositivo.
+        fetchDeviceDetailsAndUpdateTitle(currentDevice); // Chama a nova função
         deviceSelectionArea.style.display = 'none';
-
-        // Personaliza o título da página.
-        const pageHeaderTitle = document.querySelector('.page-header h1');
-        if (pageHeaderTitle) {
-            pageHeaderTitle.textContent = `Cerca Virtual - ${currentDevice}`;
-        }
     } else {
-        // Se nenhum device_name for passado, entra no modo de seleção.
         deviceSelectionArea.style.display = 'block';
         loadDevices();
-        deviceSelector.addEventListener('change', () => loadRules(deviceSelector.value));
+        deviceSelector.addEventListener('change', () => {
+             loadRules(deviceSelector.value);
+             // Atualiza o título também quando um novo dispositivo é selecionado
+             fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
+        });
     }
 
     // --- EVENT LISTENERS PARA OS FORMULÁRIOS ---

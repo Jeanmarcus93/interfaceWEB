@@ -179,27 +179,15 @@
 
             // --- FUNÇÕES AUXILIARES ---
             
-            /**
-             * Obtém parâmetros da query string da URL atual.
-             * @param {string} name - O nome do parâmetro a ser obtido.
-             * @returns {string|null} O valor do parâmetro ou nulo se não for encontrado.
-             */
             function getQueryParam(name) {
                 const urlParams = new URLSearchParams(window.location.search);
                 return urlParams.get(name);
             }
 
-            // Lê os parâmetros essenciais da URL
             const apiToken = getQueryParam('api_token');
             const telegramUserId = getQueryParam('user_id');
             const initialDeviceName = getQueryParam('device_name');
 
-            /**
-             * Realiza uma requisição fetch autenticada.
-             * @param {string} url - O endpoint da API (ex: '/api/devices').
-             * @param {object} options - Opções para a requisição fetch.
-             * @returns {Promise<Response>} A promessa da requisição fetch.
-             */
             async function fetchWithAuth(url, options = {}) {
                 const headers = {
                     ...options.headers,
@@ -210,42 +198,53 @@
 
             // --- LÓGICA DA PÁGINA ---
 
-            // Validação inicial: verifica se os parâmetros essenciais estão na URL
             if (!apiToken || !telegramUserId) {
                 document.body.innerHTML = '<h1>Erro: Acesso não autorizado. Parâmetros essenciais em falta na URL.</h1>';
                 console.error("Token da API ou ID de utilizador não encontrado na URL.");
                 return;
             }
 
-            if (initialDeviceName) {
-                // Modo com dispositivo fixo
-                deviceSelectionArea.style.display = 'none';
-                let option = document.createElement('option');
-                option.value = initialDeviceName;
-                option.textContent = initialDeviceName;
-                deviceSelector.appendChild(option);
-                deviceSelector.value = initialDeviceName;
-                deviceSelector.disabled = true;
-                pageTitle.textContent = `Histórico - ${initialDeviceName}`;
-                form.style.display = 'block';
-            } else {
-                // Modo de seleção de dispositivo
-                deviceSelectionArea.style.display = 'block';
-                loadDevices();
+            /**
+             * Busca os detalhes de um dispositivo e atualiza o título da página.
+             * @param {string} deviceName - O nome do dispositivo a ser buscado.
+             */
+            async function fetchDeviceDetailsAndUpdateTitle(deviceName) {
+                if (!deviceName) {
+                    pageTitle.textContent = 'Gerar Mapa de Histórico';
+                    return;
+                }
+                try {
+                    const response = await fetchWithAuth(`/api/device/${deviceName}`);
+                    if (response.ok) {
+                        const details = await response.json();
+                        pageTitle.textContent = `Histórico - ${details.displayName}`;
+                    } else {
+                        console.warn(`Não foi possível buscar o nome do dispositivo. Usando fallback: ${deviceName}`);
+                        pageTitle.textContent = `Histórico - ${deviceName}`;
+                    }
+                } catch (error) {
+                    console.error('Erro ao buscar detalhes do dispositivo:', error);
+                    pageTitle.textContent = `Histórico - ${deviceName}`;
+                }
             }
 
+            /**
+             * Carrega a lista de dispositivos da API e preenche o seletor.
+             */
             async function loadDevices() {
                 loadingSpinner.style.display = 'block';
+                form.style.display = 'none';
                 try {
                     const response = await fetchWithAuth('/api/devices');
                     if (!response.ok) throw new Error('Falha ao carregar dispositivos.');
                     
                     const devices = await response.json();
                     deviceSelector.innerHTML = '<option value="">-- Selecione um dispositivo --</option>';
+                    // A API agora deve retornar objetos com deviceName e displayName
                     devices.forEach(device => {
                         const option = document.createElement('option');
-                        option.value = device;
-                        option.textContent = device;
+                        option.value = device.deviceName;
+                        option.textContent = device.displayName; // Mostra o nome de exibição
                         deviceSelector.appendChild(option);
                     });
                     form.style.display = 'block';
@@ -256,6 +255,24 @@
                 } finally {
                     loadingSpinner.style.display = 'none';
                 }
+            }
+            
+            if (initialDeviceName) {
+                // Modo com dispositivo fixo: esconde o seletor e define o valor
+                deviceSelectionArea.style.display = 'none';
+                let option = document.createElement('option');
+                option.value = initialDeviceName;
+                deviceSelector.appendChild(option);
+                deviceSelector.value = initialDeviceName;
+                fetchDeviceDetailsAndUpdateTitle(initialDeviceName); // Busca o nome de exibição
+                form.style.display = 'block';
+            } else {
+                // Modo de seleção de dispositivo: carrega todos os dispositivos
+                deviceSelectionArea.style.display = 'block';
+                loadDevices();
+                deviceSelector.addEventListener('change', () => {
+                    fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
+                });
             }
             
             // --- MÁSCARA E VALIDAÇÃO DE DATA/HORA ---
@@ -289,6 +306,7 @@
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 generateBtn.disabled = true;
+                generateBtn.innerHTML = '<div class="loading-spinner-circle"></div>A Gerar...';
                 formAlert.style.display = 'none';
 
                 const deviceName = deviceSelector.value;
@@ -299,6 +317,7 @@
                     formAlert.textContent = 'Por favor, preencha todos os campos.';
                     formAlert.style.display = 'block';
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                     return;
                 }
 
@@ -306,12 +325,14 @@
                     formAlert.textContent = 'Data de Início inválida ou futura. Use DD/MM/AAAA HH:MM.';
                     formAlert.style.display = 'block';
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                     return;
                 }
                 if (!isValidDateTimeFormat(endDateString)) {
                     formAlert.textContent = 'Data de Término inválida ou futura. Use DD/MM/AAAA HH:MM.';
                     formAlert.style.display = 'block';
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                     return;
                 }
 
@@ -329,6 +350,7 @@
                     formAlert.textContent = 'A data de início deve ser anterior à data de término.';
                     formAlert.style.display = 'block';
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                     return;
                 }
 
@@ -337,6 +359,7 @@
                     formAlert.textContent = 'O período máximo permitido é de 3 dias.';
                     formAlert.style.display = 'block';
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                     return;
                 }
 
@@ -364,6 +387,7 @@
                     console.error('Erro ao gerar mapa:', error);
                 } finally {
                     generateBtn.disabled = false;
+                    generateBtn.innerHTML = 'Gerar Mapa';
                 }
             });
         });
