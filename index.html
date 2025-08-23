@@ -4,15 +4,270 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mapa de Dispositivos em Tempo Real</title>
+    <!-- Importação da biblioteca de mapas Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <link rel="stylesheet" href="style.css" />
+    <style>
+        /* --- ESTILOS GERAIS --- */
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            height: 100%; 
+            width: 100%; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        #map { 
+            height: 100vh; 
+            width: 100vw; 
+        }
+        .hidden {
+            display: none;
+        }
+
+        /* --- ESTILO PARA A MENSAGEM DE OVERLAY --- */
+        #message-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1001;
+            text-align: center;
+            font-size: 1.2em;
+            color: #333;
+            max-width: 90%;
+        }
+
+        /* --- ESTILOS PARA O SELETOR DE DISPOSITIVOS --- */
+        #device-selector {
+            position: fixed;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            padding: 8px;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-size: 14px;
+        }
+        @media (max-width: 600px) {
+            #device-selector {
+                left: 10px;
+            }
+        }
+
+        /* --- ESTILOS PARA O ÍCONE DE TELEMÓVEL PERSONALIZADO --- */
+        .cellphone-marker-icon {
+            background: transparent;
+            border: none;
+        }
+        .cellphone-marker-icon .phone-body {
+            position: relative;
+            width: 18px;
+            height: 32px;
+            background-color: #3498db; /* Azul principal */
+            border: 1.5px solid #2980b9; /* Azul mais escuro para a borda */
+            border-radius: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            box-sizing: border-box; 
+        }
+        .cellphone-marker-icon .phone-screen {
+            position: absolute;
+            top: 3px;
+            left: 2px;
+            right: 2px;
+            bottom: 7px;
+            background-color: #a9d6e5; /* Azul bem claro para a tela */
+            border-radius: 1px;
+        }
+        .cellphone-marker-icon .phone-button {
+            position: absolute;
+            bottom: 1px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            background-color: #f1f1f1;
+            border-radius: 50%;
+            border: 1px solid #ccc;
+        }
+        .cellphone-marker-icon .phone-body::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 8px solid #3498db;
+        }
+    </style>
 </head>
 <body>
+    <!-- Elementos HTML para o mapa e controlos -->
     <div id="map"></div>
-
     <select id="device-selector" class="hidden"></select>
+    <div id="message-overlay">A carregar dispositivos...</div>
 
+    <!-- Importação do JavaScript do Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="script.js"></script>
+
+    <script>
+        // --- CONFIGURAÇÃO ---
+        const API_BASE_URL = 'https://servidor-bot-60dr.onrender.com'; 
+
+        // --- VARIÁVEIS GLOBAIS ---
+        let map;
+        const deviceMarkers = {};
+        const messageOverlay = document.getElementById('message-overlay');
+        const deviceSelector = document.getElementById('device-selector');
+        let isFirstLoad = true;
+
+        // --- FUNÇÕES ---
+
+        // 1. OBTER TOKEN DA URL
+        function getTokenFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token');
+        }
+
+        // 2. INICIALIZAÇÃO DO MAPA
+        function initializeMap() {
+            map = L.map('map').setView([-14.235, -51.925], 4);
+            const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: 'Map data &copy; Google'
+            }).addTo(map);
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            });
+            L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
+        }
+
+        // 3. ÍCONE PERSONALIZADO
+        const cellphoneIcon = L.divIcon({
+            className: 'cellphone-marker-icon',
+            html: `<div class="phone-body"><div class="phone-screen"></div><div class="phone-button"></div></div>`,
+            iconSize: [18, 32],
+            iconAnchor: [9, 38],
+            popupAnchor: [0, -40]
+        });
+
+        // 4. BUSCAR E ATUALIZAR DADOS
+        async function fetchDeviceLocations(token) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/locations/my_devices`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
+                }
+                const locations = await response.json();
+                
+                if (isFirstLoad && (!locations || locations.length === 0)) {
+                    messageOverlay.textContent = "Nenhum dispositivo encontrado ou sem localização registada.";
+                    messageOverlay.classList.remove('hidden');
+                } else if (locations && locations.length > 0) {
+                    messageOverlay.classList.add('hidden');
+                }
+                
+                updateMapMarkers(locations);
+
+            } catch (error) {
+                console.error('Erro na requisição da API:', error);
+                messageOverlay.innerHTML = `<h1>Erro ao Carregar</h1><p>${error.message}<br>Por favor, solicite um novo link ao bot do Telegram.</p>`;
+                messageOverlay.classList.remove('hidden');
+                document.getElementById('map').classList.add('hidden');
+                deviceSelector.classList.add('hidden');
+            }
+        }
+        
+        // 5. ATUALIZAR MARCADORES NO MAPA
+        function updateMapMarkers(locations) {
+            const activeDevices = new Set();
+            const markerBounds = [];
+            const selectedDeviceBeforeUpdate = deviceSelector.value;
+            
+            deviceSelector.innerHTML = '<option value="">-- Todos os Dispositivos --</option>';
+
+            locations.forEach(device => {
+                const { deviceName, displayName, latitude, longitude, timestamp } = device;
+                activeDevices.add(deviceName);
+                markerBounds.push([latitude, longitude]);
+
+                const option = document.createElement('option');
+                option.value = deviceName;
+                option.textContent = displayName;
+                deviceSelector.appendChild(option);
+
+                const latLng = [latitude, longitude];
+                const localTimestamp = timestamp ? new Date(timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Sem data';
+                const popupContent = `<b>${displayName}</b><br>Última atualização: ${localTimestamp}<br><a href="https://www.google.com/maps?q=${latitude},${longitude}" target="_blank">Ver no Google Maps</a>`;
+
+                if (deviceMarkers[deviceName]) {
+                    deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
+                } else {
+                    deviceMarkers[deviceName] = L.marker(latLng, { icon: cellphoneIcon }).addTo(map).bindPopup(popupContent);
+                }
+            });
+
+            for (const deviceName in deviceMarkers) {
+                if (!activeDevices.has(deviceName)) {
+                    map.removeLayer(deviceMarkers[deviceName]);
+                    delete deviceMarkers[deviceName];
+                }
+            }
+
+            deviceSelector.value = selectedDeviceBeforeUpdate;
+
+            if (isFirstLoad && markerBounds.length > 0) {
+                if (markerBounds.length === 1) {
+                    map.setView(markerBounds[0], 16);
+                } else {
+                    map.fitBounds(markerBounds, { padding: [50, 50] });
+                }
+                deviceSelector.classList.remove('hidden');
+                isFirstLoad = false;
+            }
+        }
+
+        // 6. INICIALIZAÇÃO E EVENTOS
+        document.addEventListener('DOMContentLoaded', () => {
+            const userToken = getTokenFromUrl();
+
+            if (!userToken) {
+                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>Este mapa só pode ser acedido através de um link seguro gerado pelo bot do Telegram.</p>`;
+                document.getElementById('map').classList.add('hidden');
+                return;
+            }
+
+            initializeMap();
+
+            deviceSelector.addEventListener('change', function() {
+                const selectedDeviceName = this.value;
+                if (selectedDeviceName && deviceMarkers[selectedDeviceName]) {
+                    const marker = deviceMarkers[selectedDeviceName];
+                    map.setView(marker.getLatLng(), 16);
+                    marker.openPopup();
+                } else if (!selectedDeviceName && Object.keys(deviceMarkers).length > 1) {
+                    const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                    map.fitBounds(allBounds, { padding: [50, 50] });
+                }
+            });
+
+            fetchDeviceLocations(userToken);
+            setInterval(() => fetchDeviceLocations(userToken), 30000);
+        });
+    </script>
 </body>
 </html>
