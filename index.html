@@ -104,7 +104,7 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
-        // --- Ícone SVG realista de celular (ATUALIZADO) ---
+        // --- Ícone SVG realista de celular ---
         const cellphoneIcon = L.divIcon({
             className: '',
             html: `
@@ -121,9 +121,9 @@
                 <rect x="9.5" y="20.5" width="5" height="1" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/>
               </svg>
             `,
-            iconSize: [38, 38],       // Tamanho do ícone em pixels
-            iconAnchor: [19, 38],      // Ponto do ícone que corresponde à localização (base e centro)
-            popupAnchor: [0, -40]      // Ponto a partir do qual o popup deve abrir
+            iconSize: [38, 38],       
+            iconAnchor: [19, 38],      
+            popupAnchor: [0, -40]      
         });
 
         async function fetchDeviceLocations(userId) {
@@ -166,8 +166,11 @@
                 deviceSelector.appendChild(option);
 
                 const latLng = [latitude, longitude];
-                const popupContent = `<b>${displayName}</b><br>Última atualização: ${localTimestamp}<br>
-                                      <a href="https://maps.google.com/maps?q=${latitude},${longitude}" target="_blank">Ver no Google Maps</a>`;
+
+                // --- CONTEÚDO DO POPUP ATUALIZADO ---
+                const popupContent = `<b>Dispositivo:</b> ${displayName}<br>
+                                      <b>Última atualização:</b> ${localTimestamp}<br>
+                                      <a href="https://maps.google.com/maps?q=${latitude},${longitude}" target="_blank" style="text-decoration: none; color: #3498db;">Ver no Google Maps</a>`;
 
                 if (deviceMarkers[deviceName]) {
                     deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
