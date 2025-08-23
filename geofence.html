@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerca Virtual</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Estilos CSS -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #334155;
+        }
+        .container {
+            max-width: 90%;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .page-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            background: linear-gradient(to right, #3b82f6, #2563eb);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .page-header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        .content-block {
+            background-color: #f8fafc;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .content-block h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 1rem;
+        }
+        .rules-grid {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: 1fr;
+        }
+        @media (min-width: 768px) {
+            .rules-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        .rule-box {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .rule-box h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+        .rule-explanation {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 1rem;
+            margin-top: 0;
+        }
+        .rule-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            background-color: #f8fafc;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .rule-list li {
+            padding: 0.4rem 0.6rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #475569;
+            font-size: 0.85rem;
+        }
+        .rule-list li:last-child {
+            border-bottom: none;
+        }
+        .rule-list li .delete-btn {
+            background-color: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.3rem 0.6rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background-color 0.2s;
+        }
+        .rule-list li .delete-btn:hover {
+            background-color: #dc2626;
+        }
+        .add-form {
+            margin-top: 1rem;
+        }
+        .add-form input[type="text"] {
+            width: 100%;
+            margin-bottom: 0.75rem;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .add-form input[type="text"]:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        .add-form button {
+            width: 100%;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.6rem 1.25rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .add-form button:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1>Gerenciador de Cerca Virtual</h1>
+        </div>
+
+        <!-- Área de seleção de dispositivo (controlada via JS) -->
+        <div id="device-selection-area" class="content-block" style="display: none;">
+            <h3 id="device-display-name">Selecione um Dispositivo</h3>
+            <select id="device-selector" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="">Carregando...</option>
+            </select>
+        </div>
+
+        <!-- Container para as regras (controlado via JS) -->
+        <div id="rules-container" style="display: none;" class="rules-grid">
+            <div class="rule-box">
+                <h3>✅ Áreas Permitidas</h3>
+                <p class="rule-explanation">Gera alerta caso saia dos municípios selecionados.</p>
+                <ul id="permitido-list" class="rule-list"></ul>
+                <form id="permitido-form" class="add-form">
+                    <input type="text" id="permitido-input" placeholder="Nome do município" required>
+                    <button type="submit">Adicionar</button>
+                </form>
+            </div>
+
+            <div class="rule-box">
+                <h3>🚫 Áreas Restritas</h3>
+                <p class="rule-explanation">Gera alerta caso entre nos municípios selecionados.</p>
+                <ul id="proibido-list" class="rule-list"></ul>
+                <form id="proibido-form" class="add-form">
+                    <input type="text" id="proibido-input" placeholder="Nome do município" required>
+                    <button type="submit">Adicionar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts externos -->
+    <!-- Biblioteca para o autocompletar de municípios -->
+    <script src="https://cdn.jsdelivr.net/npm/@tarekraafat/autocomplete.js@10.2.7/dist/autoComplete.min.js"></script>
+    <!-- Script principal da página -->
+    <script src="geofence.js"></script> 
+</body>
+</html>
