@@ -121,7 +121,7 @@
 
     <script>
         // --- CONFIGURAÇÃO ---
-        const API_BASE_URL = 'https://servidor-bot-60dr.onrender.com'; 
+        const API_BASE_URL = 'https://interfaceweb-1fwz.onrender.com/'; 
 
         // --- VARIÁVEIS GLOBAIS ---
         let map;
@@ -132,10 +132,10 @@
 
         // --- FUNÇÕES ---
 
-        // 1. OBTER TOKEN DA URL
-        function getTokenFromUrl() {
+        // 1. OBTER O ID DO USUÁRIO DA URL
+        function getUserIdFromUrl() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('token');
+            return params.get('user_id'); // Alterado de 'token' para 'user_id'
         }
 
         // 2. INICIALIZAÇÃO DO MAPA
@@ -162,11 +162,14 @@
         });
 
         // 4. BUSCAR E ATUALIZAR DADOS
-        async function fetchDeviceLocations(token) {
+        async function fetchDeviceLocations(userId) {
+            if (!userId) {
+                console.error('ID do usuário não fornecido.');
+                return;
+            }
             try {
-                const response = await fetch(`${API_BASE_URL}/api/locations/my_devices`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                // Constrói a nova URL da API com o ID do usuário
+                const response = await fetch(`${API_BASE_URL}/api/locations/my_devices/${userId}`);
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -243,9 +246,9 @@
 
         // 6. INICIALIZAÇÃO E EVENTOS
         document.addEventListener('DOMContentLoaded', () => {
-            const userToken = getTokenFromUrl();
+            const userId = getUserIdFromUrl();
 
-            if (!userToken) {
+            if (!userId) {
                 messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>Este mapa só pode ser acedido através de um link seguro gerado pelo bot do Telegram.</p>`;
                 document.getElementById('map').classList.add('hidden');
                 return;
@@ -265,8 +268,8 @@
                 }
             });
 
-            fetchDeviceLocations(userToken);
-            setInterval(() => fetchDeviceLocations(userToken), 30000);
+            fetchDeviceLocations(userId);
+            setInterval(() => fetchDeviceLocations(userId), 30000);
         });
     </script>
 </body>
