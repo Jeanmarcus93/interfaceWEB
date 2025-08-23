@@ -104,19 +104,26 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
-        // --- Ícone SVG realista de celular ---
+        // --- Ícone SVG realista de celular (ATUALIZADO) ---
         const cellphoneIcon = L.divIcon({
             className: '',
             html: `
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="50" viewBox="0 0 24 24" fill="#3498db" stroke="#2980b9" stroke-width="1.2">
-                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" fill="#3498db"/>
-                <rect x="7" y="4" width="10" height="14" rx="1" ry="1" fill="#a9d6e5"/>
-                <circle cx="12" cy="19" r="1.5" fill="#fff"/>
+              <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" style="filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4));">
+                <path d="M15.5,1h-7C7.12,1,6,2.12,6,3.5v17C6,21.88,7.12,23,8.5,23h7c1.38,0,2.5-1.12,2.5-2.5v-17C18,2.12,16.88,1,15.5,1z" fill="#4a4a4a"/>
+                <defs>
+                  <linearGradient id="screenGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#4682B4;stop-opacity:1" />
+                  </linearGradient>
+                </defs>
+                <path d="M16.5,3h-9C7.22,3,7,3.22,7,3.5v15c0,0.28,0.22,0.5,0.5,0.5h9c0.28,0,0.5-0.22,0.5-0.5v-15C17,3.22,16.78,3,16.5,3z" fill="url(#screenGradient)"/>
+                <circle cx="12" cy="4.5" r="0.8" fill="#1c1c1c"/>
+                <rect x="9.5" y="20.5" width="5" height="1" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/>
               </svg>
             `,
-            iconSize: [28, 50],
-            iconAnchor: [14, 50],
-            popupAnchor: [0, -50]
+            iconSize: [38, 38],       // Tamanho do ícone em pixels
+            iconAnchor: [19, 38],      // Ponto do ícone que corresponde à localização (base e centro)
+            popupAnchor: [0, -40]      // Ponto a partir do qual o popup deve abrir
         });
 
         async function fetchDeviceLocations(userId) {
@@ -160,7 +167,7 @@
 
                 const latLng = [latitude, longitude];
                 const popupContent = `<b>${displayName}</b><br>Última atualização: ${localTimestamp}<br>
-                                      <a href="https://www.google.com/maps?q=${latitude},${longitude}" target="_blank">Ver no Google Maps</a>`;
+                                      <a href="https://maps.google.com/maps?q=${latitude},${longitude}" target="_blank">Ver no Google Maps</a>`;
 
                 if (deviceMarkers[deviceName]) {
                     deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
