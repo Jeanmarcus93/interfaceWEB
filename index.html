@@ -368,7 +368,7 @@
                 });
 
                 fetchDeviceLocations();
-                setInterval(fetchDeviceLocations, 10000); // Atualiza a cada 10 segundos
+                setInterval(fetchDeviceLocations, 5000); // Atualiza a cada 5 segundos
                 
             } catch (error) {
                 messageOverlay.innerHTML = `<h1>Acesso Negado</h1><p>${error.message}</p>`;
