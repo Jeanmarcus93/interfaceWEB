@@ -287,7 +287,7 @@
 
                 // Chama fetchDeviceLocations sem passar userId, pois ele já está em currentUserId
                 fetchDeviceLocations();
-                setInterval(fetchDeviceLocations, 30000); // Chama a cada 30 segundos
+                setInterval(fetchDeviceLocations, 10000); // Chama a cada 10 segundos
                 
             } catch (error) {
                 messageOverlay.innerHTML = `<h1>Acesso Negado</h1><p>${error.message}</p>`;
