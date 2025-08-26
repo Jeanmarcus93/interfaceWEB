@@ -105,6 +105,7 @@
         let jwtToken = null; 
         let currentUserId = null;
         let trackedDeviceName = null; // Guarda o nome do dispositivo sendo rastreado
+        let realTimeTimeout = null; // Guarda o ID do timer para o retorno automático ao modo padrão
 
         /**
          * Obtém um parâmetro da query string da URL.
@@ -128,9 +129,31 @@
                 messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token de acesso ausente.</p>`;
                 return Promise.reject(new Error('Token de acesso não fornecido.'));
             }
-            const headers = { ...options.headers, 'Authorization': `Bearer ${jwtToken}` };
+            const headers = { ...options.headers, 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' };
             const fullUrl = `${API_BASE_URL}${url}`;
             return fetch(fullUrl, { ...options, headers });
+        }
+        
+        /**
+         * Envia um comando para alterar o modo de operação do dispositivo.
+         * @param {string} deviceName - O nome do dispositivo.
+         * @param {string} mode - 'REAL_TIME' ou 'STANDARD'.
+         */
+        async function setDeviceMode(deviceName, mode) {
+            try {
+                const response = await fetchWithAuth('/api/device/set_mode', {
+                    method: 'POST',
+                    body: JSON.stringify({ deviceName, mode })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    console.error(`Falha ao definir o modo para ${mode}: ${result.message}`);
+                } else {
+                    console.log(`Comando para modo ${mode} enviado para ${deviceName}`);
+                }
+            } catch (error) {
+                console.error('Erro ao enviar comando de modo:', error);
+            }
         }
 
         /**
@@ -224,13 +247,11 @@
 
             deviceSelector.value = selectedBefore;
 
-            // Ajusta o zoom na primeira carga
             if (isFirstLoad && markerBounds.length > 0) {
                 map.fitBounds(markerBounds, { padding: [50, 50] });
                 isFirstLoad = false;
             }
 
-            // Mantém o mapa centralizado no dispositivo rastreado
             if (trackedDeviceName && deviceMarkers[trackedDeviceName]) {
                 map.panTo(deviceMarkers[trackedDeviceName].getLatLng());
             }
@@ -238,9 +259,17 @@
         
         /**
          * Para o modo de rastreio, resetando o estado do botão e a variável de controle.
+         * Envia o comando para voltar ao modo STANDARD.
          */
         function stopTracking() {
             if (trackedDeviceName) {
+                setDeviceMode(trackedDeviceName, 'STANDARD');
+
+                if (realTimeTimeout) {
+                    clearTimeout(realTimeTimeout);
+                    realTimeTimeout = null;
+                }
+
                 trackedDeviceName = null;
                 trackBtn.textContent = '🛰️ Rastrear Dispositivo';
                 trackBtn.classList.remove('tracking-active');
@@ -257,7 +286,6 @@
             }
 
             try {
-                // Valida o token com o backend para garantir a autenticidade
                 const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -277,17 +305,19 @@
 
                 deviceSelector.addEventListener('change', function() {
                     const selectedDevice = this.value;
-                    stopTracking(); // Para o rastreio ao mudar a seleção
+                    if (trackedDeviceName) {
+                        stopTracking();
+                    }
 
                     if (selectedDevice) {
-                        trackBtn.disabled = false; // Habilita o botão de rastreio
+                        trackBtn.disabled = false;
                         if (deviceMarkers[selectedDevice]) {
                             const marker = deviceMarkers[selectedDevice];
                             map.setView(marker.getLatLng(), 16);
                             marker.openPopup();
                         }
                     } else {
-                        trackBtn.disabled = true; // Desabilita se "Todos" for selecionado
+                        trackBtn.disabled = true;
                         if (Object.keys(deviceMarkers).length > 1) {
                             const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
                             map.fitBounds(allBounds, { padding: [50, 50] });
@@ -296,7 +326,9 @@
                 });
                 
                 showAllBtn.addEventListener('click', () => {
-                    stopTracking(); 
+                    if (trackedDeviceName) {
+                        stopTracking();
+                    }
                     deviceSelector.value = '';
                     trackBtn.disabled = true;
                     if (Object.keys(deviceMarkers).length > 0) {
@@ -307,21 +339,34 @@
                 
                 trackBtn.addEventListener('click', () => {
                     if (trackedDeviceName) {
-                        // Se já estiver rastreando, para o rastreio
                         stopTracking();
                     } else {
-                        // Se não estiver rastreando, inicia o rastreio
                         const selectedDevice = deviceSelector.value;
                         if (selectedDevice && deviceMarkers[selectedDevice]) {
                             trackedDeviceName = selectedDevice;
                             trackBtn.textContent = 'Parar Rastreio';
                             trackBtn.classList.add('tracking-active');
-                            map.setView(deviceMarkers[trackedDeviceName].getLatLng(), 17); // Zoom mais próximo para rastreio
+                            map.setView(deviceMarkers[trackedDeviceName].getLatLng(), 17);
+
+                            setDeviceMode(trackedDeviceName, 'REAL_TIME');
+
+                            if (realTimeTimeout) {
+                                clearTimeout(realTimeTimeout);
+                            }
+                            
+                            // Timeout de segurança no lado do cliente para atualizar a UI
+                            realTimeTimeout = setTimeout(() => {
+                                console.log('Timeout de 30 minutos atingido no cliente. Atualizando UI.');
+                                if (trackedDeviceName === selectedDevice) {
+                                     trackBtn.textContent = '🛰️ Rastrear Dispositivo';
+                                     trackBtn.classList.remove('tracking-active');
+                                     trackedDeviceName = null;
+                                }
+                            }, 1800000); // 30 minutos
                         }
                     }
                 });
 
-                // Inicia a busca de dados e o intervalo de atualização
                 fetchDeviceLocations();
                 setInterval(fetchDeviceLocations, 10000); // Atualiza a cada 10 segundos
                 
