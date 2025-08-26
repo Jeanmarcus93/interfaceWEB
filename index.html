@@ -39,7 +39,7 @@
             position: fixed; bottom: 20px; left: 10px;
             z-index: 1000;
             display: flex;
-            flex-direction: column; /* Agora em coluna */
+            flex-direction: column; 
             align-items: flex-start;
             gap: 8px;
             padding: 10px;
@@ -57,8 +57,18 @@
             padding: 6px 10px; border-radius: 5px;
             cursor: pointer; font-size: 14px;
             width: 100%;
+            transition: background-color 0.3s;
         }
         .map-button:hover { background: #2980b9; }
+        .map-button:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+        /* Estilo para o botão de rastreio quando ativo */
+        .map-button.tracking-active {
+            background-color: #e74c3c; /* Vermelho para indicar "parar" */
+        }
+        .map-button.tracking-active:hover {
+            background-color: #c0392b;
+        }
 
         @media (max-width: 600px) {
             #controls-container { width: 85%; }
@@ -71,6 +81,8 @@
     <div id="controls-container" class="hidden">
         <button id="show-all" class="map-button">🌍 Todos</button>
         <select id="device-selector"></select>
+        <!-- Botão de Rastrear -->
+        <button id="track-btn" class="map-button" disabled>🛰️ Rastrear Dispositivo</button>
     </div>
     <div id="message-overlay">
         <div class="spinner"></div>
@@ -79,6 +91,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // --- Configurações e Variáveis Globais ---
         const API_BASE_URL = 'https://servidor-bot-60dr.onrender.com';
         let map;
         const deviceMarkers = {};
@@ -86,15 +99,17 @@
         const deviceSelector = document.getElementById('device-selector');
         const controlsContainer = document.getElementById('controls-container');
         const showAllBtn = document.getElementById('show-all');
-        let isFirstLoad = true;
+        const trackBtn = document.getElementById('track-btn');
         
-        let jwtToken = null; // Variável para armazenar o token JWT
-        let currentUserId = null; // Variável para armazenar o user_id após validação do token
+        let isFirstLoad = true;
+        let jwtToken = null; 
+        let currentUserId = null;
+        let trackedDeviceName = null; // Guarda o nome do dispositivo sendo rastreado
 
         /**
-         * Obtém um parâmetro da URL.
-         * @param {string} name - O nome do parâmetro.
-         * @returns {string|null} O valor do parâmetro.
+         * Obtém um parâmetro da query string da URL.
+         * @param {string} name - O nome do parâmetro a ser obtido.
+         * @returns {string|null} O valor do parâmetro ou null se não for encontrado.
          */
         function getQueryParam(name) {
             const params = new URLSearchParams(window.location.search);
@@ -102,29 +117,25 @@
         }
 
         /**
-         * Realiza uma requisição fetch autenticada, adicionando o token JWT no cabeçalho.
-         * @param {string} url - O endpoint da API.
-         * @param {object} options - Opções para a requisição fetch.
-         * @returns {Promise<Response>} A promessa da requisição fetch.
+         * Realiza uma requisição fetch adicionando o token de autenticação JWT.
+         * @param {string} url - O caminho do endpoint da API (ex: /api/locations).
+         * @param {object} options - Opções padrão da função fetch (method, body, etc.).
+         * @returns {Promise<Response>} A promessa da resposta da requisição.
          */
         async function fetchWithAuth(url, options = {}) {
             if (!jwtToken) {
                 console.error('Erro fatal: JWT Token não encontrado.');
                 messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token de acesso ausente.</p>`;
-                document.getElementById('map').classList.add('hidden');
-                controlsContainer.classList.add('hidden');
                 return Promise.reject(new Error('Token de acesso não fornecido.'));
             }
-
-            const headers = {
-                ...options.headers,
-                'Authorization': `Bearer ${jwtToken}`
-            };
-            
+            const headers = { ...options.headers, 'Authorization': `Bearer ${jwtToken}` };
             const fullUrl = `${API_BASE_URL}${url}`;
             return fetch(fullUrl, { ...options, headers });
         }
 
+        /**
+         * Inicializa o mapa Leaflet com as camadas de tiles.
+         */
         function initializeMap() {
             map = L.map('map').setView([-14.235, -51.925], 4);
             const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
@@ -136,35 +147,20 @@
             L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
         }
 
+        // Ícone customizado para os dispositivos
         const cellphoneIcon = L.divIcon({
             className: '',
-            html: `
-              <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" style="filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4));">
-                <path d="M15.5,1h-7C7.12,1,6,2.12,6,3.5v17C6,21.88,7.12,23,8.5,23h7c1.38,0,2.5-1.12,2.5-2.5v-17C18,2.12,16.88,1,15.5,1z" fill="#4a4a4a"/>
-                <defs>
-                  <linearGradient id="screenGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" />
-                    <stop offset="100%" style="stop-color:#4682B4;stop-opacity:1" />
-                  </linearGradient>
-                </defs>
-                <path d="M16.5,3h-9C7.22,3,7,3.22,7,3.5v15c0,0.28,0.22,0.5,0.5,0.5h9c0.28,0,0.5-0.22,0.5-0.5v-15C17,3.22,16.78,3,16.5,3z" fill="url(#screenGradient)"/>
-                <circle cx="12" cy="4.5" r="0.8" fill="#1c1c1c"/>
-                <rect x="9.5" y="20.5" width="5" height="1" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/>
-              </svg>
-            `,
-            iconSize: [38, 38],       
-            iconAnchor: [19, 38],      
-            popupAnchor: [0, -40]      
+            html: `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" style="filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4));"><path d="M15.5,1h-7C7.12,1,6,2.12,6,3.5v17C6,21.88,7.12,23,8.5,23h7c1.38,0,2.5-1.12,2.5-2.5v-17C18,2.12,16.88,1,15.5,1z" fill="#4a4a4a"/><defs><linearGradient id="screenGradient" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" /><stop offset="100%" style="stop-color:#4682B4;stop-opacity:1" /></linearGradient></defs><path d="M16.5,3h-9C7.22,3,7,3.22,7,3.5v15c0,0.28,0.22,0.5,0.5,0.5h9c0.28,0,0.5-0.22,0.5-0.5v-15C17,3.22,16.78,3,16.5,3z" fill="url(#screenGradient)"/><circle cx="12" cy="4.5" r="0.8" fill="#1c1c1c"/><rect x="9.5" y="20.5" width="5" height="1" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/></svg>`,
+            iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -40]      
         });
 
-        async function fetchDeviceLocations() { // Não precisa mais do userId como parâmetro
-            if (!currentUserId) {
-                console.warn('currentUserId não definido. Pulando fetchDeviceLocations.');
-                return;
-            }
+        /**
+         * Busca as localizações dos dispositivos na API e inicia a atualização do mapa.
+         */
+        async function fetchDeviceLocations() {
+            if (!currentUserId) return;
             try {
-                // Usa a nova função fetchWithAuth que inclui o token no cabeçalho
-                const response = await fetchWithAuth(`/api/locations/my_devices`); // Endpoint não precisa do userId
+                const response = await fetchWithAuth(`/api/locations/my_devices`);
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(`Erro HTTP: ${response.status} - ${errorData.message || response.statusText}`);
@@ -180,11 +176,13 @@
                 updateMapMarkers(locations);
             } catch (error) {
                 messageOverlay.innerHTML = `<h1>Erro</h1><p>${error.message}</p>`;
-                document.getElementById('map').classList.add('hidden');
-                controlsContainer.classList.add('hidden');
             }
         }
 
+        /**
+         * Atualiza os marcadores no mapa com base nos dados recebidos da API.
+         * @param {Array} locations - Array de objetos de localização de dispositivos.
+         */
         function updateMapMarkers(locations) {
             const activeDevices = new Set();
             const markerBounds = [];
@@ -204,10 +202,7 @@
                 deviceSelector.appendChild(option);
 
                 const latLng = [latitude, longitude];
-
-                const popupContent = `<b>Dispositivo:</b> ${displayName}<br>
-                                      <b>Última atualização:</b> ${localTimestamp}<br>
-                                      <a href="https://maps.google.com/maps?q=${latitude},${longitude}" target="_blank" style="text-decoration: none; color: #3498db;">Ver no Google Maps</a>`;
+                const popupContent = `<b>Dispositivo:</b> ${displayName}<br><b>Última atualização:</b> ${localTimestamp}<br><a href="https://www.google.com/maps?q=${latitude},${longitude}" target="_blank" style="text-decoration: none; color: #3498db;">Ver no Google Maps</a>`;
 
                 if (deviceMarkers[deviceName]) {
                     deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
@@ -215,12 +210,11 @@
                     deviceMarkers[deviceName] = L.marker(latLng, { icon: cellphoneIcon })
                         .addTo(map)
                         .bindPopup(popupContent)
-                        .on("click", () => { 
-                            deviceSelector.value = deviceName; 
-                        });
+                        .on("click", () => { deviceSelector.value = deviceName; });
                 }
             });
 
+            // Remove marcadores de dispositivos que não estão mais ativos
             for (const deviceName in deviceMarkers) {
                 if (!activeDevices.has(deviceName)) {
                     map.removeLayer(deviceMarkers[deviceName]);
@@ -230,26 +224,40 @@
 
             deviceSelector.value = selectedBefore;
 
+            // Ajusta o zoom na primeira carga
             if (isFirstLoad && markerBounds.length > 0) {
                 map.fitBounds(markerBounds, { padding: [50, 50] });
-                controlsContainer.classList.remove('hidden');
                 isFirstLoad = false;
+            }
+
+            // Mantém o mapa centralizado no dispositivo rastreado
+            if (trackedDeviceName && deviceMarkers[trackedDeviceName]) {
+                map.panTo(deviceMarkers[trackedDeviceName].getLatLng());
+            }
+        }
+        
+        /**
+         * Para o modo de rastreio, resetando o estado do botão e a variável de controle.
+         */
+        function stopTracking() {
+            if (trackedDeviceName) {
+                trackedDeviceName = null;
+                trackBtn.textContent = '🛰️ Rastrear Dispositivo';
+                trackBtn.classList.remove('tracking-active');
             }
         }
 
-        // --- Lógica de inicialização ---
+        // --- Lógica de Inicialização da Página ---
         document.addEventListener('DOMContentLoaded', async () => {
-            jwtToken = getQueryParam('token'); // Obtém o token JWT da URL
+            jwtToken = getQueryParam('token');
 
             if (!jwtToken) {
                 messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>Token de acesso ausente na URL.</p>`;
-                document.getElementById('map').classList.add('hidden');
-                controlsContainer.classList.add('hidden');
                 return;
             }
 
             try {
-                // Valida o token JWT com o backend para obter o user_id
+                // Valida o token com o backend para garantir a autenticidade
                 const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -257,42 +265,68 @@
                 });
 
                 const data = await response.json();
-
                 if (!response.ok || data.status === 'error') {
                     throw new Error(data.message || 'Token de acesso inválido ou expirado.');
                 }
                 
-                currentUserId = data.user_id; // Armazena o user_id validado
+                currentUserId = data.user_id;
                 initializeMap();
-                controlsContainer.classList.remove('hidden'); // Mostra os controles após autenticação
+                controlsContainer.classList.remove('hidden');
+
+                // --- Event Listeners para os Controles ---
 
                 deviceSelector.addEventListener('change', function() {
                     const selectedDevice = this.value;
-                    if (selectedDevice && deviceMarkers[selectedDevice]) {
-                        const marker = deviceMarkers[selectedDevice];
-                        map.setView(marker.getLatLng(), 16);
-                        marker.openPopup();
-                    } else if (!selectedDevice && Object.keys(deviceMarkers).length > 1) {
-                        const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
-                        map.fitBounds(allBounds, { padding: [50, 50] });
+                    stopTracking(); // Para o rastreio ao mudar a seleção
+
+                    if (selectedDevice) {
+                        trackBtn.disabled = false; // Habilita o botão de rastreio
+                        if (deviceMarkers[selectedDevice]) {
+                            const marker = deviceMarkers[selectedDevice];
+                            map.setView(marker.getLatLng(), 16);
+                            marker.openPopup();
+                        }
+                    } else {
+                        trackBtn.disabled = true; // Desabilita se "Todos" for selecionado
+                        if (Object.keys(deviceMarkers).length > 1) {
+                            const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                            map.fitBounds(allBounds, { padding: [50, 50] });
+                        }
                     }
                 });
-
+                
                 showAllBtn.addEventListener('click', () => {
+                    stopTracking(); 
+                    deviceSelector.value = '';
+                    trackBtn.disabled = true;
                     if (Object.keys(deviceMarkers).length > 0) {
                         const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
                         map.fitBounds(allBounds, { padding: [50, 50] });
                     }
                 });
+                
+                trackBtn.addEventListener('click', () => {
+                    if (trackedDeviceName) {
+                        // Se já estiver rastreando, para o rastreio
+                        stopTracking();
+                    } else {
+                        // Se não estiver rastreando, inicia o rastreio
+                        const selectedDevice = deviceSelector.value;
+                        if (selectedDevice && deviceMarkers[selectedDevice]) {
+                            trackedDeviceName = selectedDevice;
+                            trackBtn.textContent = 'Parar Rastreio';
+                            trackBtn.classList.add('tracking-active');
+                            map.setView(deviceMarkers[trackedDeviceName].getLatLng(), 17); // Zoom mais próximo para rastreio
+                        }
+                    }
+                });
 
-                // Chama fetchDeviceLocations sem passar userId, pois ele já está em currentUserId
+                // Inicia a busca de dados e o intervalo de atualização
                 fetchDeviceLocations();
-                setInterval(fetchDeviceLocations, 10000); // Chama a cada 10 segundos
+                setInterval(fetchDeviceLocations, 10000); // Atualiza a cada 10 segundos
                 
             } catch (error) {
                 messageOverlay.innerHTML = `<h1>Acesso Negado</h1><p>${error.message}</p>`;
-                document.getElementById('map').classList.add('hidden');
-                controlsContainer.classList.add('hidden');
                 console.error('Erro na validação do token:', error);
             }
         });
