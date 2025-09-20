@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Dispositivos em Tempo Real</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        body, html { 
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            font-family: Arial, sans-serif; background-color: #f0f0f0;
+        }
+        #map { height: 100vh; width: 100vw; }
+        .hidden { display: none; }
+
+        /* --- Overlay com Spinner --- */
+        #message-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255,255,255,0.95);
+            padding: 25px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1001; text-align: center;
+            font-size: 1.2em; color: #333;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #ccc;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- Controles Inferiores --- */
+        #controls-container {
+            position: fixed; bottom: 20px; left: 10px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column; 
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px;
+            background-color: rgba(255,255,255,0.9);
+            border: 1px solid #ccc; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        #device-selector {
+            font-size: 14px; border-radius: 5px;
+            border: 1px solid #ccc; padding: 5px;
+            min-width: 220px;
+        }
+        .map-button {
+            background: #3498db; color: white; border: none;
+            padding: 6px 10px; border-radius: 5px;
+            cursor: pointer; font-size: 14px;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        .map-button:hover { background: #2980b9; }
+        .map-button:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+        /* Estilo para o botão de rastreio quando ativo */
+        .map-button.tracking-active {
+            background-color: #e74c3c; /* Vermelho para indicar "parar" */
+        }
+        .map-button.tracking-active:hover {
+            background-color: #c0392b;
+        }
+
+        @media (max-width: 600px) {
+            #controls-container { width: 85%; }
+            #device-selector, .map-button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls-container" class="hidden">
+        <button id="show-all" class="map-button">🌍 Mostrar Todos</button>
+        <select id="device-selector"></select>
+        <!-- Botão de Rastrear -->
+        <button id="track-btn" class="map-button" disabled>🛰️ Rastrear Dispositivo</button>
+    </div>
+    <div id="message-overlay">
+        <div class="spinner"></div>
+        <p>A carregar dispositivos...</p>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- Configurações e Variáveis Globais ---
+        const API_BASE_URL = 'https://servidor-bot-60dr.onrender.com';
+        let map;
+        const deviceMarkers = {};
+        const messageOverlay = document.getElementById('message-overlay');
+        const deviceSelector = document.getElementById('device-selector');
+        const controlsContainer = document.getElementById('controls-container');
+        const showAllBtn = document.getElementById('show-all');
+        const trackBtn = document.getElementById('track-btn');
+        
+        let isFirstLoad = true;
+        let jwtToken = null; 
+        let currentUserId = null;
+        let trackedDeviceName = null; // Guarda o nome do dispositivo sendo rastreado
+        let realTimeTimeout = null; // Guarda o ID do timer para o retorno automático ao modo padrão
+
+        /**
+         * Obtém um parâmetro da query string da URL.
+         * @param {string} name - O nome do parâmetro a ser obtido.
+         * @returns {string|null} O valor do parâmetro ou null se não for encontrado.
+         */
+        function getQueryParam(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        }
+
+        /**
+         * Realiza uma requisição fetch adicionando o token de autenticação JWT.
+         * @param {string} url - O caminho do endpoint da API (ex: /api/locations).
+         * @param {object} options - Opções padrão da função fetch (method, body, etc.).
+         * @returns {Promise<Response>} A promessa da resposta da requisição.
+         */
+        async function fetchWithAuth(url, options = {}) {
+            if (!jwtToken) {
+                console.error('Erro fatal: JWT Token não encontrado.');
+                messageOverlay.innerHTML = `<h1>Erro de Autenticação</h1><p>Token de acesso ausente.</p>`;
+                return Promise.reject(new Error('Token de acesso não fornecido.'));
+            }
+            const headers = { ...options.headers, 'Authorization': `Bearer ${jwtToken}`, 'Content-Type': 'application/json' };
+            const fullUrl = `${API_BASE_URL}${url}`;
+            return fetch(fullUrl, { ...options, headers });
+        }
+        
+        /**
+         * Envia um comando para alterar o modo de operação do dispositivo.
+         * @param {string} deviceName - O nome do dispositivo.
+         * @param {string} mode - 'REAL_TIME' ou 'STANDARD'.
+         */
+        async function setDeviceMode(deviceName, mode) {
+            try {
+                const response = await fetchWithAuth('/api/device/set_mode', {
+                    method: 'POST',
+                    body: JSON.stringify({ deviceName, mode })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    console.error(`Falha ao definir o modo para ${mode}: ${result.message}`);
+                } else {
+                    console.log(`Comando para modo ${mode} enviado para ${deviceName}`);
+                }
+            } catch (error) {
+                console.error('Erro ao enviar comando de modo:', error);
+            }
+        }
+
+        /**
+         * Inicializa o mapa Leaflet com as camadas de tiles.
+         */
+        function initializeMap() {
+            map = L.map('map').setView([-14.235, -51.925], 4);
+            const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 20, subdomains: ['mt0','mt1','mt2','mt3'], attribution: 'Map data © Google'
+            }).addTo(map);
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            });
+            L.control.layers({ "Google Maps (Híbrido)": googleHybrid, "OpenStreetMap": osmLayer }).addTo(map);
+        }
+
+        // Ícone customizado para os dispositivos
+        const cellphoneIcon = L.divIcon({
+            className: '',
+            html: `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" style="filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4));"><path d="M15.5,1h-7C7.12,1,6,2.12,6,3.5v17C6,21.88,7.12,23,8.5,23h7c1.38,0,2.5-1.12,2.5-2.5v-17C18,2.12,16.88,1,15.5,1z" fill="#4a4a4a"/><defs><linearGradient id="screenGradient" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" /><stop offset="100%" style="stop-color:#4682B4;stop-opacity:1" /></linearGradient></defs><path d="M16.5,3h-9C7.22,3,7,3.22,7,3.5v15c0,0.28,0.22,0.5,0.5,0.5h9c0.28,0,0.5-0.22,0.5-0.5v-15C17,3.22,16.78,3,16.5,3z" fill="url(#screenGradient)"/><circle cx="12" cy="4.5" r="0.8" fill="#1c1c1c"/><rect x="9.5" y="20.5" width="5" height="1" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/></svg>`,
+            iconSize: [38, 38], iconAnchor: [19, 38], popupAnchor: [0, -40]      
+        });
+
+        /**
+         * Busca as localizações dos dispositivos na API e inicia a atualização do mapa.
+         */
+        async function fetchDeviceLocations() {
+            if (!currentUserId) return;
+            try {
+                const response = await fetchWithAuth(`/api/locations/my_devices`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Erro HTTP: ${response.status} - ${errorData.message || response.statusText}`);
+                }
+                const locations = await response.json();
+                
+                if (isFirstLoad && (!locations || locations.length === 0)) {
+                    messageOverlay.innerHTML = `<p>Nenhum dispositivo encontrado.</p>`;
+                    return;
+                } else if (locations && locations.length > 0) {
+                    messageOverlay.classList.add('hidden');
+                }
+                updateMapMarkers(locations);
+            } catch (error) {
+                messageOverlay.innerHTML = `<h1>Erro</h1><p>${error.message}</p>`;
+            }
+        }
+
+        /**
+         * Atualiza os marcadores no mapa com base nos dados recebidos da API.
+         * @param {Array} locations - Array de objetos de localização de dispositivos.
+         */
+        function updateMapMarkers(locations) {
+            const activeDevices = new Set();
+            const markerBounds = [];
+            const selectedBefore = deviceSelector.value;
+            
+            deviceSelector.innerHTML = '<option value="">-- Todos os Dispositivos --</option>';
+
+            locations.forEach(device => {
+                const { deviceName, displayName, latitude, longitude, timestamp } = device;
+                activeDevices.add(deviceName);
+                markerBounds.push([latitude, longitude]);
+
+                const localTimestamp = timestamp ? new Date(timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Sem data';
+                const option = document.createElement('option');
+                option.value = deviceName;
+                option.textContent = `${displayName} — ${localTimestamp}`;
+                deviceSelector.appendChild(option);
+
+                const latLng = [latitude, longitude];
+                const popupContent = `<b>Dispositivo:</b> ${displayName}<br><b>Última atualização:</b> ${localTimestamp}<br><a href="https://www.google.com/maps?q=${latitude},${longitude}" target="_blank" style="text-decoration: none; color: #3498db;">Ver no Google Maps</a>`;
+
+                if (deviceMarkers[deviceName]) {
+                    deviceMarkers[deviceName].setLatLng(latLng).setPopupContent(popupContent);
+                } else {
+                    deviceMarkers[deviceName] = L.marker(latLng, { icon: cellphoneIcon })
+                        .addTo(map)
+                        .bindPopup(popupContent)
+                        .on("click", () => { deviceSelector.value = deviceName; });
+                }
+            });
+
+            // Remove marcadores de dispositivos que não estão mais ativos
+            for (const deviceName in deviceMarkers) {
+                if (!activeDevices.has(deviceName)) {
+                    map.removeLayer(deviceMarkers[deviceName]);
+                    delete deviceMarkers[deviceName];
+                }
+            }
+
+            deviceSelector.value = selectedBefore;
+
+            if (isFirstLoad && markerBounds.length > 0) {
+                map.fitBounds(markerBounds, { padding: [50, 50] });
+                isFirstLoad = false;
+            }
+
+            if (trackedDeviceName && deviceMarkers[trackedDeviceName]) {
+                map.panTo(deviceMarkers[trackedDeviceName].getLatLng());
+            }
+        }
+        
+        /**
+         * Para o modo de rastreio, resetando o estado do botão e a variável de controle.
+         * Envia o comando para voltar ao modo STANDARD.
+         */
+        function stopTracking() {
+            if (trackedDeviceName) {
+                setDeviceMode(trackedDeviceName, 'STANDARD');
+
+                if (realTimeTimeout) {
+                    clearTimeout(realTimeTimeout);
+                    realTimeTimeout = null;
+                }
+
+                trackedDeviceName = null;
+                trackBtn.textContent = '🛰️ Rastrear Dispositivo';
+                trackBtn.classList.remove('tracking-active');
+            }
+        }
+
+        // --- Lógica de Inicialização da Página ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            jwtToken = getQueryParam('token');
+
+            if (!jwtToken) {
+                messageOverlay.innerHTML = `<h1>Acesso Inválido</h1><p>Token de acesso ausente na URL.</p>`;
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: jwtToken })
+                });
+
+                const data = await response.json();
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Token de acesso inválido ou expirado.');
+                }
+                
+                currentUserId = data.user_id;
+                initializeMap();
+                controlsContainer.classList.remove('hidden');
+
+                // --- Event Listeners para os Controles ---
+
+                deviceSelector.addEventListener('change', function() {
+                    const selectedDevice = this.value;
+                    if (trackedDeviceName) {
+                        stopTracking();
+                    }
+
+                    if (selectedDevice) {
+                        trackBtn.disabled = false;
+                        if (deviceMarkers[selectedDevice]) {
+                            const marker = deviceMarkers[selectedDevice];
+                            map.setView(marker.getLatLng(), 16);
+                            marker.openPopup();
+                        }
+                    } else {
+                        trackBtn.disabled = true;
+                        if (Object.keys(deviceMarkers).length > 1) {
+                            const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                            map.fitBounds(allBounds, { padding: [50, 50] });
+                        }
+                    }
+                });
+                
+                showAllBtn.addEventListener('click', () => {
+                    if (trackedDeviceName) {
+                        stopTracking();
+                    }
+                    deviceSelector.value = '';
+                    trackBtn.disabled = true;
+                    if (Object.keys(deviceMarkers).length > 0) {
+                        const allBounds = Object.values(deviceMarkers).map(m => m.getLatLng());
+                        map.fitBounds(allBounds, { padding: [50, 50] });
+                    }
+                });
+                
+                trackBtn.addEventListener('click', () => {
+                    if (trackedDeviceName) {
+                        stopTracking();
+                    } else {
+                        const selectedDevice = deviceSelector.value;
+                        if (selectedDevice && deviceMarkers[selectedDevice]) {
+                            trackedDeviceName = selectedDevice;
+                            trackBtn.textContent = 'Parar Rastreio';
+                            trackBtn.classList.add('tracking-active');
+                            map.setView(deviceMarkers[trackedDeviceName].getLatLng(), 17);
+
+                            setDeviceMode(trackedDeviceName, 'REAL_TIME');
+
+                            if (realTimeTimeout) {
+                                clearTimeout(realTimeTimeout);
+                            }
+                            
+                            // Timeout de segurança no lado do cliente para atualizar a UI
+                            realTimeTimeout = setTimeout(() => {
+                                console.log('Timeout de 30 minutos atingido no cliente. Atualizando UI.');
+                                if (trackedDeviceName === selectedDevice) {
+                                     trackBtn.textContent = '🛰️ Rastrear Dispositivo';
+                                     trackBtn.classList.remove('tracking-active');
+                                     trackedDeviceName = null;
+                                }
+                            }, 1800000); // 30 minutos
+                        }
+                    }
+                });
+
+                fetchDeviceLocations();
+                setInterval(fetchDeviceLocations, 5000); // Atualiza a cada 5 segundos
+                
+            } catch (error) {
+                messageOverlay.innerHTML = `<h1>Acesso Negado</h1><p>${error.message}</p>`;
+                console.error('Erro na validação do token:', error);
+            }
+        });
+    </script>
+</body>
+</html>

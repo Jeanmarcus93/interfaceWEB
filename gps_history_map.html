@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histórico GPS - Gerar Mapa</title>
+    <!-- Tailwind CSS para estilização moderna e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #334155;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center; /* Centraliza verticalmente o conteúdo */
+            padding: 1rem; /* Adiciona padding para evitar que o conteúdo encoste nas bordas */
+        }
+        .container {
+            width: 90vw;
+            max-width: 90vw;
+            /* margin-top: 2rem; <-- Removido para ocupar a tela verticalmente */
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            flex-grow: 1; /* Permite que o container ocupe o espaço restante */
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* Centraliza o conteúdo dentro do container */
+        }
+        @media (min-width: 768px) {
+            .container {
+                max-width: 320px; /* Largura ajustada para melhor visualização */
+                width: 100%;
+                /* margin-top: 10vh; <-- Removido para ocupar a tela verticalmente */
+            }
+        }
+        .page-header {
+            text-align: center;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #3b82f6, #2563eb);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .page-header h1 {
+            font-size: 1.5rem; /* Ajustado para caber melhor */
+            font-weight: 700;
+        }
+        .instruction-text {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #64748b;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            width: 90%;
+            max-width: 320px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #475569;
+            text-align: center;
+        }
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            text-align: center;
+        }
+        .form-group select:focus,
+        .form-group input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        .btn-submit {
+            width: 100%;
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .btn-submit:hover {
+            background-color: #2563eb;
+        }
+        .btn-submit:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        .alert {
+            background-color: #bfdbfe;
+            color: #1e40af;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            text-align: center;
+            display: none;
+            border: 1px solid #93c5fd;
+        }
+        .loading-spinner-circle {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1 id="page-title">Histórico GPS - Gerar Mapa de Histórico</h1>
+        </div>
+
+        <p class="instruction-text">
+            Informe o período desejado, limitado a 3 dias, para gerar o mapa de histórico.
+        </p>
+
+        <div id="loading-spinner" style="display: none; text-align: center;">
+            <div class="loading-spinner-circle"></div>
+            <p>A carregar dispositivos...</p>
+        </div>
+
+        <form id="map-form" style="display: none;">
+            <div id="device-selection-area" class="form-group">
+                <label for="device-selector">Selecione o Dispositivo:</label>
+                <select id="device-selector" name="device-name">
+                    <option value="">-- Selecione um dispositivo --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="start-date">Data e Hora de Início:</label>
+                <input type="text" id="start-date" name="start-date" placeholder="dd/mm/aaaa hh:mm" required maxlength="16">
+            </div>
+            <div class="form-group">
+                <label for="end-date">Data e Hora de Término:</label>
+                <input type="text" id="end-date" name="end-date" placeholder="dd/mm/aaaa hh:mm" required maxlength="16">
+            </div>
+            <button type="submit" class="btn-submit" id="generate-btn">Gerar Mapa</button>
+            <div id="form-alert" class="alert"></div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // --- CONFIGURAÇÃO ---
+            const API_BASE_URL = 'https://servidor-bot-60dr.onrender.com';
+
+            // --- SELETORES DE ELEMENTOS DOM ---
+            const form = document.getElementById('map-form');
+            const deviceSelector = document.getElementById('device-selector');
+            const deviceSelectionArea = document.getElementById('device-selection-area');
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            const generateBtn = document.getElementById('generate-btn');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const formAlert = document.getElementById('form-alert');
+            const pageTitle = document.getElementById('page-title');
+
+            // --- VARIÁVEIS DE ESTADO ---
+            let jwtToken = null;
+            let currentUserId = null;
+            const initialDeviceName = getQueryParam('device_name');
+
+            // --- FUNÇÕES AUXILIARES ---
+            
+            function getQueryParam(name) {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get(name);
+            }
+
+            async function fetchWithAuth(url, options = {}) {
+                if (!jwtToken) {
+                    console.error('Erro fatal: JWT Token não encontrado.');
+                    formAlert.textContent = 'Erro de autenticação: Token de acesso não fornecido.';
+                    formAlert.style.display = 'block';
+                    return Promise.reject(new Error('Token de acesso não fornecido.'));
+                }
+
+                const headers = {
+                    ...options.headers,
+                    'Authorization': `Bearer ${jwtToken}`
+                };
+                return fetch(`${API_BASE_URL}${url}`, { ...options, headers });
+            }
+
+            // --- LÓGICA DA PÁGINA ---
+
+            jwtToken = getQueryParam('token'); // Pega o token JWT da URL
+
+            if (!jwtToken) {
+                document.body.innerHTML = '<h1>Erro: Acesso não autorizado. Token de acesso ausente na URL.</h1>';
+                console.error("Token de acesso não encontrado na URL.");
+                return;
+            }
+
+            try {
+                // Valida o token JWT com o backend para obter o user_id
+                const response = await fetch(`${API_BASE_URL}/api/auth/validate_token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: jwtToken })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Token de acesso inválido ou expirado.');
+                }
+                
+                currentUserId = data.user_id; // Armazena o user_id validado
+
+                /**
+                 * Busca os detalhes de um dispositivo e atualiza o título da página.
+                 * @param {string} deviceName - O nome do dispositivo a ser buscado.
+                 */
+                async function fetchDeviceDetailsAndUpdateTitle(deviceName) {
+                    let titlePrefix = 'Histórico GPS - '; // Prefix to always be displayed
+                    if (!deviceName) {
+                        pageTitle.textContent = titlePrefix + 'Gerar Mapa de Histórico';
+                        return;
+                    }
+                    try {
+                        const response = await fetchWithAuth(`/api/device/${deviceName}`);
+                        if (response.ok) {
+                            const details = await response.json();
+                            pageTitle.textContent = titlePrefix + details.displayName;
+                        } else {
+                            console.warn(`Não foi possível buscar o nome do dispositivo. Usando fallback: ${deviceName}`);
+                            pageTitle.textContent = titlePrefix + deviceName;
+                        }
+                    } catch (error) {
+                        console.error('Erro ao buscar detalhes do dispositivo:', error);
+                        pageTitle.textContent = titlePrefix + deviceName;
+                    }
+                }
+
+                /**
+                 * Carrega a lista de dispositivos da API e preenche o seletor.
+                 */
+                async function loadDevices() {
+                    loadingSpinner.style.display = 'block';
+                    form.style.display = 'none';
+                    try {
+                        const response = await fetchWithAuth('/api/locations/my_devices'); // Endpoint ajustado
+                        if (!response.ok) throw new Error('Falha ao carregar dispositivos.');
+                        
+                        const devices = await response.json();
+                        deviceSelector.innerHTML = '<option value="">-- Selecione um dispositivo --</option>';
+                        // A API agora deve retornar objetos com deviceName e displayName
+                        devices.forEach(device => {
+                            const option = document.createElement('option');
+                            option.value = device.deviceName;
+                            option.textContent = device.displayName; // Mostra o nome de exibição
+                            deviceSelector.appendChild(option);
+                        });
+                        form.style.display = 'block';
+                    } catch (error) {
+                        formAlert.textContent = 'Erro ao carregar a lista de dispositivos. Tente novamente mais tarde.';
+                        formAlert.style.display = 'block';
+                        console.error('Erro ao carregar dispositivos:', error);
+                    } finally {
+                        loadingSpinner.style.display = 'none';
+                    }
+                }
+                
+                if (initialDeviceName) {
+                    // Modo com dispositivo fixo: esconde o seletor e define o valor
+                    deviceSelectionArea.style.display = 'none';
+                    let option = document.createElement('option');
+                    option.value = initialDeviceName;
+                    deviceSelector.appendChild(option);
+                    deviceSelector.value = initialDeviceName;
+                    fetchDeviceDetailsAndUpdateTitle(initialDeviceName); // Busca o nome de exibição
+                    form.style.display = 'block';
+                } else {
+                    // Modo de seleção de dispositivo: carrega todos os dispositivos
+                    deviceSelectionArea.style.display = 'block';
+                    loadDevices();
+                    // Set initial title even when no device is selected yet
+                    pageTitle.textContent = 'Histórico GPS - Gerar Mapa de Histórico';
+                    deviceSelector.addEventListener('change', () => {
+                        fetchDeviceDetailsAndUpdateTitle(deviceSelector.value);
+                    });
+                }
+                
+                // --- MÁSCARA E VALIDAÇÃO DE DATA/HORA ---
+
+                function formatDateTimeInput(input) {
+                    let value = input.value.replace(/\D/g, '');
+                    if (value.length > 2) value = value.substring(0, 2) + '/' + value.substring(2);
+                    if (value.length > 5) value = value.substring(0, 5) + '/' + value.substring(5);
+                    if (value.length > 10) value = value.substring(0, 10) + ' ' + value.substring(10);
+                    if (value.length > 13) value = value.substring(0, 13) + ':' + value.substring(13);
+                    input.value = value.substring(0, 16);
+                }
+
+                function isValidDateTimeFormat(dateTimeString) {
+                    const regex = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/;
+                    const match = dateTimeString.match(regex);
+                    if (!match) return false;
+
+                    const [, day, month, year, hours, minutes] = match.map(Number);
+                    const date = new Date(year, month - 1, day, hours, minutes);
+                    
+                    return date.getFullYear() === year && (date.getMonth() + 1) === month && date.getDate() === day &&
+                           date.getHours() === hours && date.getMinutes() === minutes && date <= new Date();
+                }
+
+                startDateInput.addEventListener('input', () => formatDateTimeInput(startDateInput));
+                endDateInput.addEventListener('input', () => formatDateTimeInput(endDateInput));
+
+                // --- SUBMISSÃO DO FORMULÁRIO ---
+
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    generateBtn.disabled = true;
+                    generateBtn.innerHTML = '<div class="loading-spinner-circle"></div>A Gerar...';
+                    formAlert.style.display = 'none';
+
+                    const deviceName = deviceSelector.value;
+                    const startDateString = startDateInput.value;
+                    const endDateString = endDateInput.value;
+
+                    if (!deviceName || !startDateString || !endDateString) {
+                        formAlert.textContent = 'Por favor, preencha todos os campos.';
+                        formAlert.style.display = 'block';
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                        return;
+                    }
+
+                    if (!isValidDateTimeFormat(startDateString)) {
+                        formAlert.textContent = 'Data de Início inválida ou futura. Use DD/MM/AAAA HH:MM.';
+                        formAlert.style.display = 'block';
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                        return;
+                    }
+                    if (!isValidDateTimeFormat(endDateString)) {
+                        formAlert.textContent = 'Data de Término inválida ou futura. Use DD/MM/AAAA HH:MM.';
+                        formAlert.style.display = 'block';
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                        return;
+                    }
+
+                    const parseDateString = (str) => {
+                        const [datePart, timePart] = str.split(' ');
+                        const [day, month, year] = datePart.split('/').map(Number);
+                        const [hour, minute] = timePart.split(':').map(Number);
+                        return new Date(year, month - 1, day, hour, minute);
+                    };
+
+                    const startDateTime = parseDateString(startDateString);
+                    const endDateTime = parseDateString(endDateString);
+
+                    if (startDateTime >= endDateTime) {
+                        formAlert.textContent = 'A data de início deve ser anterior à data de término.';
+                        formAlert.style.display = 'block';
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                        return;
+                    }
+
+                    const threeDaysInMs = 3 * 24 * 60 * 60 * 1000;
+                    if (endDateTime - startDateTime > threeDaysInMs) {
+                        formAlert.textContent = 'O período máximo permitido é de 3 dias.';
+                        formAlert.style.display = 'block';
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                        return;
+                    }
+
+                    try {
+                        const response = await fetchWithAuth('/api/history/generate_map_by_date', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                deviceName: deviceName,
+                                startDate: startDateTime.toISOString(),
+                                endDate: endDateTime.toISOString(),
+                                telegramUserId: currentUserId // Usa o user_id obtido do token
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.message || 'Erro desconhecido ao gerar mapa.');
+
+                        // Substituí o alert() por uma div de mensagem para melhor UX
+                        formAlert.textContent = 'O pedido para gerar o mapa foi enviado com sucesso! Irá recebê-lo no Telegram.';
+                        formAlert.style.display = 'block';
+                        formAlert.style.backgroundColor = '#d1fae5'; // Verde claro para sucesso
+                        formAlert.style.color = '#065f46'; // Verde escuro
+
+                        // Considere não fechar a janela automaticamente, ou dar um tempo para o usuário ler a mensagem
+                        // setTimeout(() => { window.close(); }, 3000); 
+                        
+                    } catch (error) {
+                        formAlert.textContent = `Erro: ${error.message}`;
+                        formAlert.style.display = 'block';
+                        console.error('Erro ao gerar mapa:', error);
+                    } finally {
+                        generateBtn.disabled = false;
+                        generateBtn.innerHTML = 'Gerar Mapa';
+                    }
+                });
+
+            } catch (error) {
+                document.body.innerHTML = `<h1>Erro de Autenticação</h1><p>${error.message}</p>`;
+                console.error('Erro na validação do token:', error);
+            }
+        });
+    </script>
+</body>
+</html>
